@@ -10,7 +10,7 @@
 #define INVALID puts("Invalid command");
 
 void config(int, char *, char *);
-int CheckInit(char *);
+char *CheckInit(char *);
 void init();
 void GetParent(char *);
 int main(int argc, char *argv[])
@@ -79,11 +79,13 @@ void config(int global, char *mode, char *str)
             {
                 FILE *user = fopen("/home/aminkoohi/.magitconfig/user.txt", "w");
                 fprintf(user, "%s", str);
+                fclose(user);
             }
             else
             {
                 FILE *email = fopen("/home/aminkoohi/.magitconfig/email.txt", "w");
                 fprintf(email, "%s", str);
+                fclose(email);
             }
         }
         else
@@ -92,11 +94,13 @@ void config(int global, char *mode, char *str)
             {
                 FILE *user = fopen("/home/aminkoohi/.magitconfig/user.txt", "w");
                 fprintf(user, "%s", str);
+                fclose(user);
             }
             else
             {
                 FILE *email = fopen("/home/aminkoohi/.magitconfig/email.txt", "w");
                 fprintf(email, "%s", str);
+                fclose(email);
             }
         }
         closedir(dir);
@@ -104,6 +108,34 @@ void config(int global, char *mode, char *str)
     }
     else
     {
+        char *cwd;
+        char buffer[PATH_MAX];
+        cwd = getcwd(buffer, PATH_MAX);
+        char *path = malloc(PATH_MAX);
+        path = CheckInit(cwd);
+        if (path != NULL)
+        {
+            strcat(path, "/.magit");
+            if (!strcmp(mode, "user.name"))
+            {
+                strcat(path, "/user.txt");
+                printf("%s\n", path);
+                FILE *config = fopen(path, "w");
+                fprintf(config, "%s", str);
+                fclose(config);
+            }
+            else
+            {
+                strcat(path, "/email.txt");
+                FILE *config = fopen(path, "w");
+                fprintf(config, "%s", str);
+                fclose(config);
+            }
+        }
+        else
+        {
+            puts("This is not a magit repository");
+        }
         return;
     }
 }
@@ -112,7 +144,7 @@ void init()
     char *cwd;
     char buffer[PATH_MAX];
     cwd = getcwd(buffer, PATH_MAX);
-    if (CheckInit(cwd))
+    if (CheckInit(cwd) != NULL)
     {
         puts("This is already a magit repository");
         return;
@@ -121,12 +153,12 @@ void init()
     {
         mkdir(".magit", 0777);
         mkdir(".magit/branch", 0777);
-        mkdir(".magit/branch/main", 0777);
+        mkdir(".magit/branch/master", 0777);
         mkdir(".magit/commits", 0777);
         return;
     }
 }
-int CheckInit(char *path)
+char *CheckInit(char *path)
 {
     DIR *dir = opendir(path);
     struct dirent *fp;
@@ -134,9 +166,8 @@ int CheckInit(char *path)
     {
         if (!strcmp(fp->d_name, ".magit"))
         {
-            printf("%s\n", path);
             closedir(dir);
-            return 1;
+            return path;
         }
     }
     closedir(dir);
@@ -149,7 +180,7 @@ int CheckInit(char *path)
     }
     else
     {
-        return 0;
+        return NULL;
     }
 }
 void GetParent(char *path)
