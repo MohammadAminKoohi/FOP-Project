@@ -119,7 +119,6 @@ void config(int global, char *mode, char *str)
             if (!strcmp(mode, "user.name"))
             {
                 strcat(path, "/user.txt");
-                printf("%s\n", path);
                 FILE *config = fopen(path, "w");
                 fprintf(config, "%s", str);
                 fclose(config);
