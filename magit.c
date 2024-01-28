@@ -7,7 +7,9 @@
 #include <sys/types.h>
 #include <sys/stat.h>
 
-#define INVALID puts("Invalid command");
+#define INVALID              \
+    puts("Invalid command"); \
+    return 0;
 #define deb puts("debug")
 #define Dir 0
 #define File 1
@@ -21,6 +23,8 @@ char *FindPath(char *);
 void add(int, char *);
 void StageFolder(char *);
 int copyFile(char *, char *);
+int FileDir(char *);
+void addn(int);
 
 int main(int argc, char *argv[])
 {
@@ -86,31 +90,86 @@ int main(int argc, char *argv[])
         }
         else if (!strcmp(argv[1], "add"))
         {
-            if (strcmp(repo, cwd))
+            if (argc <= 2)
             {
-                char *path = malloc(PATH_MAX);
-                path = FindPath(argv[2]);
-                StageFolder(path);
+                INVALID
             }
-            struct stat path_stat;
-            stat(argv[2], &path_stat);
-            if (S_ISREG(path_stat.st_mode))
+            if (!strcmp(argv[2], "-n"))
             {
-                add(File, argv[2]);
+                int a = atoi(argv[3]);
+                addn(a);
             }
-            else if (S_ISDIR(path_stat.st_mode))
+            else if (!strcmp(argv[2], "-f"))
             {
-                add(Dir, argv[2]);
+                for (int i = 3; i < argc; i++)
+                {
+                    if (strcmp(repo, cwd))
+                    {
+                        char *path = malloc(PATH_MAX);
+                        path = FindPath(argv[2]);
+                        StageFolder(path);
+                    }
+                    add(FileDir(argv[i]), argv[i]);
+                }
+                return 0;
             }
             else
             {
-                puts("Invalid File or Directory");
+                for (int i = 2; i < argc; i++)
+                {
+                    if (strcmp(repo, cwd))
+                    {
+                        char *path = malloc(PATH_MAX);
+                        path = FindPath(argv[2]);
+                        StageFolder(path);
+                    }
+                    add(FileDir(argv[i]), argv[i]);
+                }
+                return 0;
             }
         }
     }
     return 0;
 }
 
+int CheckStage(char *path)
+{
+    char *status_path = malloc(PATH_MAX);
+    char *cwd;
+    char buffer[PATH_MAX];
+    cwd = getcwd(buffer, PATH_MAX);
+    char *repo = CheckInit(cwd);
+    sprintf(status_path, "%s/.magit/status.txt", repo);
+    FILE *status = fopen(status_path, "r");
+    char *line = malloc(PATH_MAX);
+    while (fgets(line, PATH_MAX, status) != NULL)
+    {
+        line[strlen(line) - 1] = '\0';
+        if (!strcmp(line, path))
+        {
+            line[strlen(line) - 1] = '\n';
+            return 1;
+        }
+    }
+    return 0;
+}
+int FileDir(char *path)
+{
+    struct stat path_stat;
+    stat(path, &path_stat);
+    if (S_ISREG(path_stat.st_mode))
+    {
+        return File;
+    }
+    else if (S_ISDIR(path_stat.st_mode))
+    {
+        return Dir;
+    }
+    else
+    {
+        return -1;
+    }
+}
 char *CheckInit(char *path)
 {
     DIR *dir = opendir(path);
@@ -155,10 +214,11 @@ int copyFile(char *sourcePath, char *destinationPath)
     chdir(destinationPath);
     FILE *destinationFile = fopen(destinationPath, "wb");
     char buffer[BUFFER_SIZE];
-    size_t bytesRead;
-    while ((bytesRead = fread(buffer, 1, BUFFER_SIZE, sourceFile)) > 0)
+    // fix here
+    size_t size;
+    while ((size = fread(buffer, 1, BUFFER_SIZE, sourceFile)) > 0)
     {
-        size_t bytesWritten = fwrite(buffer, 1, bytesRead, destinationFile);
+        fwrite(buffer, 1, size, destinationFile);
     }
     fclose(sourceFile);
     return 0;
@@ -190,7 +250,6 @@ void StageFolder(char *path)
     chdir(".magit/stage");
     while (token != NULL)
     {
-        printf("token: %s\n", token);
         mkdir(token, 0777);
         chdir(token);
         token = strtok(NULL, "/");
@@ -286,11 +345,17 @@ void init()
         mkdir(".magit/branch/master", 0777);
         mkdir(".magit/commits", 0777);
         mkdir(".magit/stage", 0777);
+        fopen(".magit/status.txt", "w");
         return;
     }
 }
 void add(int mode, char *str)
 {
+    if (mode == -1)
+    {
+        puts("Invalid File or Directory");
+        return;
+    }
     char *cwd;
     char buffer[PATH_MAX];
     cwd = getcwd(buffer, PATH_MAX);
@@ -303,10 +368,6 @@ void add(int mode, char *str)
         {
             NewPath = NewPath + 1;
         }
-        printf("NewPath: %s\n", NewPath);
-        printf("cwd: %s\n", cwd);
-        printf("repo: %s\n", repo);
-        printf("str: %s\n", str);
         chdir("/");
         chdir(repo);
         chdir(".magit/stage");
@@ -331,7 +392,6 @@ void add(int mode, char *str)
             {
                 char path[PATH_MAX];
                 sprintf(path, "%s/%s", cwd, str);
-                printf("path: %s\n", path);
                 chdir("/");
                 chdir(path);
                 add(Dir, fp->d_name);
@@ -359,14 +419,71 @@ void add(int mode, char *str)
         FILE *file = fopen(File_Name, "r");
         if (file == NULL)
         {
-            puts("File not found\n");
+            puts("File not found\n"); // check if staged
+            return;
+        }
+        if (CheckStage(File_Name))
+        {
             return;
         }
         char *path = malloc(PATH_MAX);
         path = FindPath(str);
         char *copydest = malloc(PATH_MAX);
+        char stats_path[PATH_MAX];
+        char abs_path[PATH_MAX];
+        sprintf(abs_path, "%s/%s", cwd, str);
+        sprintf(stats_path, "%s/.magit/status.txt", repo);
+        FILE *status = fopen(stats_path, "a");
+        fprintf(status, "%s\n", abs_path);
         sprintf(copydest, "%s/.magit/stage%s", repo, path);
         copyFile(File_Name, copydest);
         return;
     }
+}
+void addn(int num)
+{
+    if (num == 0)
+    {
+        return;
+    }
+    char *cwd;
+    char buffer[PATH_MAX];
+    cwd = getcwd(buffer, PATH_MAX);
+    char *repo = CheckInit(cwd);
+    struct dirent *fp;
+    char *path = malloc(PATH_MAX);
+    DIR *dir = opendir(cwd);
+    if (dir == NULL)
+    {
+        puts("Directory not found\n");
+        return;
+    }
+    while ((fp = readdir(dir)) != NULL)
+    {
+        if (strcmp(fp->d_name, ".") == 0 || strcmp(fp->d_name, "..") == 0)
+        {
+            continue;
+        }
+        if (FileDir(fp->d_name) == Dir)
+        {
+            chdir(fp->d_name);
+            addn(num - 1);
+            chdir(cwd);
+        }
+        else if (FileDir(fp->d_name) == File)
+        {
+            char *File_Path = malloc(PATH_MAX);
+            sprintf(File_Path, "%s/%s", cwd, fp->d_name);
+            if (CheckStage(File_Path))
+            {
+                printf("%s\tstaged\n", fp->d_name);
+            }
+            else
+            {
+                printf("%s\t unstaged\n", fp->d_name);
+            }
+        }
+    }
+
+    return;
 }
