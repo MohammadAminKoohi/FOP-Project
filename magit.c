@@ -25,6 +25,7 @@ void StageFolder(char *);
 int copyFile(char *, char *);
 int FileDir(char *);
 void addn(int);
+void reset(int, char *);
 
 int main(int argc, char *argv[])
 {
@@ -127,6 +128,33 @@ int main(int argc, char *argv[])
                 }
                 return 0;
             }
+        }
+        else if (!strcmp(argv[1], "reset"))
+        {
+            if (argc <= 2)
+            {
+                INVALID
+            }
+            if (!strcmp(argv[2], "-f"))
+            {
+                for (int i = 3; i < argc; i++)
+                {
+                    reset(FileDir(argv[i]), argv[i]);
+                }
+                return 0;
+            }
+            else
+            {
+                for (int i = 2; i < argc; i++)
+                {
+                    reset(FileDir(argv[i]), argv[i]);
+                }
+                return 0;
+            }
+        }
+        else
+        {
+            INVALID
         }
     }
     return 0;
@@ -346,6 +374,7 @@ void init()
         mkdir(".magit/commits", 0777);
         mkdir(".magit/stage", 0777);
         fopen(".magit/status.txt", "w");
+        fopen(".magit/branch/master/reset.txt", "w");
         return;
     }
 }
@@ -486,4 +515,85 @@ void addn(int num)
     }
 
     return;
+}
+void reset(int mode, char *str)
+{
+    char *cwd;
+    char buffer[PATH_MAX];
+    cwd = getcwd(buffer, PATH_MAX);
+    char *repo = CheckInit(cwd);
+    if (mode == Dir)
+    {
+        char *rm_path = malloc(PATH_MAX);
+        sprintf(rm_path, "rm -r %s/.magit/stage/%s", repo, str);
+        printf("%s\n", rm_path);
+        system(rm_path);
+        char *status_path = malloc(PATH_MAX);
+        sprintf(status_path, "%s/.magit/status.txt", repo);
+        FILE *status = fopen(status_path, "r");
+        char *line = malloc(PATH_MAX);
+        char file_txt[1000][4096];
+        int i = 0;
+        char *loc = malloc(PATH_MAX);
+        sprintf(loc, "%s/%s", cwd, str);
+        printf("%s\n", loc);
+        while (fgets(line, PATH_MAX, status) != NULL)
+        {
+            line[strlen(line) - 1] = '\0';
+            if (!strncmp(line, loc, strlen(loc)))
+            {
+                line[strlen(line) - 1] = '\n';
+                continue;
+            }
+            line[strlen(line) - 1] = '\n';
+            strcpy(file_txt[i], line);
+            i++;
+        }
+        fclose(status);
+        status = fopen(status_path, "w");
+        for (int j = 0; j < i; j++)
+        {
+            fprintf(status, "%s", file_txt[j]);
+        }
+        fclose(status);
+    }
+    else
+    {
+        char *rm_path = malloc(PATH_MAX);
+        char *loc = malloc(PATH_MAX);
+        sprintf(rm_path, "%s/.magit/stage/%s", repo, str);
+        sprintf(loc, "%s/%s", cwd, str);
+        if (!CheckStage(loc))
+        {
+            printf("%s is not staged\n", str);
+            return;
+        }
+        remove(rm_path);
+        char *status_path = malloc(PATH_MAX);
+        sprintf(status_path, "%s/.magit/status.txt", repo);
+        FILE *status = fopen(status_path, "r");
+        char *line = malloc(PATH_MAX);
+        char file_txt[1000][4096];
+        int i = 0;
+        printf("status path: %s\n", status_path);
+        while (fgets(line, PATH_MAX, status) != NULL)
+        {
+            line[strlen(line) - 1] = '\0';
+            if (!strcmp(line, loc))
+            {
+                line[strlen(line) - 1] = '\n';
+                continue;
+            }
+            line[strlen(line) - 1] = '\n';
+            strcpy(file_txt[i], line);
+            i++;
+        }
+        fclose(status);
+        status = fopen(status_path, "w");
+        for (int j = 0; j < i; j++)
+        {
+            fprintf(status, "%s", file_txt[j]);
+        }
+        fclose(status);
+    }
 }
