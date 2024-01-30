@@ -29,6 +29,24 @@ void reset(int, char *);
 void undo();
 int CheckStage(char *);
 void redo();
+void commit(int, char **);
+void logg(int, char **);
+int filecounter(char *);
+char *changedir(char *);
+void printcwd();
+void checkout(int, char **);
+
+typedef struct
+{
+    int id;
+    char message[72];
+    char branch[100];
+    char author[100];
+    char author_email[100];
+    int prev;
+    int filecount;
+    struct tm *time;
+} commit_info;
 
 int main(int argc, char *argv[])
 {
@@ -101,7 +119,7 @@ int main(int argc, char *argv[])
             {
                 INVALID
             }
-            if (!strcmp(argv[2], "redo"))
+            if (!strcmp(argv[2], "-redo"))
             {
                 redo();
             }
@@ -120,6 +138,7 @@ int main(int argc, char *argv[])
                 {
                     INVALID
                 }
+
                 for (int i = 3; i < argc; i++)
                 {
                     char *abspath = malloc(PATH_MAX);
@@ -129,14 +148,21 @@ int main(int argc, char *argv[])
                         printf("%s is already staged\n", argv[i]);
                         continue;
                     }
-                    if (strcmp(repo, cwd))
+                    char tmp[PATH_MAX];
+                    strcpy(tmp, argv[i]);
+                    char *x = changedir(argv[i]);
+                    char *newcwd = malloc(PATH_MAX);
+                    char buffer[PATH_MAX];
+                    newcwd = getcwd(buffer, PATH_MAX);
+                    if (strcmp(repo, newcwd))
                     {
                         char *path = malloc(PATH_MAX);
                         path = FindPath(argv[2]);
                         StageFolder(path);
                     }
-                    fprintf(addfile, "%s ", argv[i]);
-                    add(FileDir(argv[i]), argv[i]);
+                    add(FileDir(x), changedir(x));
+                    fprintf(addfile, "%s ", tmp);
+                    chdir(cwd);
                 }
                 fprintf(addfile, "\n");
                 return 0;
@@ -145,6 +171,8 @@ int main(int argc, char *argv[])
             {
                 for (int i = 2; i < argc; i++)
                 {
+                    char tmp[PATH_MAX];
+                    strcpy(tmp, argv[i]);
                     char *abspath = malloc(PATH_MAX);
                     sprintf(abspath, "%s/%s", cwd, argv[i]);
                     if (CheckStage(abspath))
@@ -152,14 +180,19 @@ int main(int argc, char *argv[])
                         printf("%s is already staged\n", argv[i]);
                         continue;
                     }
-                    if (strcmp(repo, cwd))
+                    char *x = changedir(argv[i]);
+                    char *newcwd = malloc(PATH_MAX);
+                    char buffer[PATH_MAX];
+                    newcwd = getcwd(buffer, PATH_MAX);
+                    if (strcmp(repo, newcwd))
                     {
                         char *path = malloc(PATH_MAX);
                         path = FindPath(argv[2]);
                         StageFolder(path);
                     }
-                    fprintf(addfile, "%s ", argv[i]);
-                    add(FileDir(argv[i]), argv[i]);
+                    fprintf(addfile, "%s ", tmp);
+                    add(FileDir(x), x);
+                    chdir(cwd);
                 }
                 fprintf(addfile, "\n");
                 return 0;
@@ -174,7 +207,7 @@ int main(int argc, char *argv[])
             {
                 INVALID
             }
-            if (!strcmp(argv[2], "undo"))
+            if (!strcmp(argv[2], "-undo"))
             {
                 undo();
             }
@@ -182,15 +215,22 @@ int main(int argc, char *argv[])
             {
                 for (int i = 3; i < argc; i++)
                 {
+                    char tmp[PATH_MAX];
+                    strcpy(tmp, argv[i]);
+                    char *x = changedir(argv[i]);
+                    char *newcwd = malloc(PATH_MAX);
+                    char buffer[PATH_MAX];
+                    newcwd = getcwd(buffer, PATH_MAX);
                     char *abspath = malloc(PATH_MAX);
-                    sprintf(abspath, "%s/%s", cwd, argv[i]);
+                    sprintf(abspath, "%s/%s", newcwd, x);
                     if (!CheckStage(abspath))
                     {
-                        printf("%s is not staged\n", argv[i]);
+                        printf("%s is not staged\n", x);
                         continue;
                     }
-                    fprintf(resetfile, "%s ", argv[i]);
-                    reset(FileDir(argv[i]), argv[i]);
+                    fprintf(resetfile, "%s ", tmp);
+                    reset(FileDir(x), x);
+                    chdir(cwd);
                 }
                 fprintf(resetfile, "\n");
                 return 0;
@@ -199,19 +239,54 @@ int main(int argc, char *argv[])
             {
                 for (int i = 2; i < argc; i++)
                 {
+                    char tmp[PATH_MAX];
+                    strcpy(tmp, argv[i]);
+                    char *x = changedir(argv[i]);
+                    char *newcwd = malloc(PATH_MAX);
+                    char buffer[PATH_MAX];
+                    newcwd = getcwd(buffer, PATH_MAX);
                     char *abspath = malloc(PATH_MAX);
-                    sprintf(abspath, "%s/%s", cwd, argv[i]);
+                    sprintf(abspath, "%s/%s", newcwd, x);
                     if (!CheckStage(abspath))
                     {
-                        printf("%s is not staged\n", argv[i]);
+                        printf("%s is not staged\n", x);
                         continue;
                     }
-                    fprintf(resetfile, "%s ", argv[i]);
-                    reset(FileDir(argv[i]), argv[i]);
+                    fprintf(resetfile, "%s ", tmp);
+                    reset(FileDir(x), x);
+                    chdir(cwd);
                 }
                 fprintf(resetfile, "\n");
                 return 0;
             }
+        }
+        else if (!strcmp(argv[1], "commit"))
+        {
+            if (!strcmp(argv[2], "-m"))
+            {
+                if (argc <= 3)
+                {
+                    INVALID
+                }
+                if (strlen(argv[3]) > 72)
+                {
+                    puts("commit message must be less than 72 characters");
+                    return 0;
+                }
+                commit(argc, argv);
+            }
+            else
+            {
+                INVALID
+            }
+        }
+        else if (!strcmp(argv[1], "log"))
+        {
+            logg(argc, argv);
+        }
+        else if (!strcmp(argv[1], "checkout"))
+        {
+            checkout(argc, argv);
         }
         else
         {
@@ -221,6 +296,31 @@ int main(int argc, char *argv[])
     return 0;
 }
 
+void printcwd()
+{
+    char *cwd;
+    char buffer[PATH_MAX];
+    cwd = getcwd(buffer, PATH_MAX);
+    printf("%s\n", cwd);
+    return;
+}
+char *changedir(char *path)
+{
+    // take a directory and change directory to parent of it and tokenize the last part of path and return it
+    char *loc = strrchr(path, '/');
+    if (loc == NULL)
+    {
+        return path;
+    }
+    *loc = '\0';
+    char *token = strtok(path, "/");
+    while (token != NULL)
+    {
+        chdir(token);
+        token = strtok(NULL, "/");
+    }
+    return loc + 1;
+}
 int CheckStage(char *path)
 {
     char *status_path = malloc(PATH_MAX);
@@ -313,7 +413,6 @@ int copyFile(char *sourcePath, char *destinationPath)
     chdir(destinationPath);
     FILE *destinationFile = fopen(destinationPath, "wb");
     char buffer[BUFFER_SIZE];
-    // fix here
     size_t size;
     while ((size = fread(buffer, 1, BUFFER_SIZE, sourceFile)) > 0)
     {
@@ -434,21 +533,27 @@ void init()
     cwd = getcwd(buffer, PATH_MAX);
     if (CheckInit(cwd) != NULL)
     {
-        puts("This is already a magit repository");
-        return;
+        puts("repository reinitialized");
+        system("rm -r .magit");
     }
-    else
-    {
-        mkdir(".magit", 0777);
-        mkdir(".magit/branch", 0777);
-        mkdir(".magit/branch/master", 0777);
-        mkdir(".magit/commits", 0777);
-        mkdir(".magit/stage", 0777);
-        fopen(".magit/status.txt", "w");
-        fopen(".magit/reset.txt", "w");
-        fopen(".magit/add.txt", "w");
-        return;
-    }
+    mkdir(".magit", 0777);
+    mkdir(".magit/branch", 0777);
+    mkdir(".magit/branch/master", 0777);
+    mkdir(".magit/commits", 0777);
+    mkdir(".magit/stage", 0777);
+    fopen(".magit/status.txt", "w");
+    fopen(".magit/reset.txt", "w");
+    fopen(".magit/add.txt", "w");
+    FILE *branch = fopen(".magit/commits/branch.txt", "w");
+    FILE *previd = fopen(".magit/commits/previd.txt", "w");
+    FILE *last_id = fopen(".magit/commits/last_id.txt", "w");
+    FILE *log = fopen(".magit/commits/log.txt", "w");
+    FILE *prevbranch = fopen(".magit/commits/prevbranch.txt", "w");
+    fprintf(branch, "master");
+    fprintf(prevbranch, "master");
+    fprintf(previd, "0");
+    fprintf(last_id, "-1");
+    return;
 }
 void add(int mode, char *str)
 {
@@ -741,4 +846,628 @@ void redo()
     resetfile = fopen(resetfilepath, "w");
     fclose(resetfile);
     return;
+}
+int filecounter(char *path)
+{
+    // count the files in the path recursively
+    int count = 0;
+    struct dirent *fp;
+    DIR *dir = opendir(path);
+    while ((fp = readdir(dir)) != NULL)
+    {
+        if (strcmp(fp->d_name, ".") == 0 || strcmp(fp->d_name, "..") == 0 || strcmp(fp->d_name, ".magit") == 0)
+        {
+            continue;
+        }
+        if (fp->d_type == DT_DIR)
+        {
+            char *path2 = malloc(PATH_MAX);
+            sprintf(path2, "%s/%s", path, fp->d_name);
+            count += filecounter(path2);
+        }
+        else if (fp->d_type == DT_REG)
+        {
+            count++;
+        }
+    }
+    return count;
+}
+void commit(int argc, char **argv)
+{
+    char *cwd;
+    char buffer[PATH_MAX];
+    cwd = getcwd(buffer, PATH_MAX);
+    char *repo = CheckInit(cwd);
+    char *user = malloc(PATH_MAX);
+    char *email = malloc(PATH_MAX);
+    sprintf(user, "%s/.magit/user.txt", repo);
+    sprintf(email, "%s/.magit/email.txt", repo);
+    FILE *user_file = fopen(user, "r");
+    FILE *email_file = fopen(email, "r");
+    if (user_file == NULL || email_file == NULL)
+    {
+        // check global config
+        char *user = malloc(PATH_MAX);
+        char *email = malloc(PATH_MAX);
+        sprintf(user, "/home/aminkoohi/.magitconfig/user.txt");
+        sprintf(email, "/home/aminkoohi/.magitconfig/email.txt");
+        user_file = fopen(user, "r");
+        email_file = fopen(email, "r");
+        if (user_file == NULL || email_file == NULL)
+        {
+            puts("you must set user name and email before committing");
+            return;
+        }
+    }
+    char *user_name = malloc(PATH_MAX);
+    char *user_email = malloc(PATH_MAX);
+    fgets(user_name, PATH_MAX, user_file);
+    fgets(user_email, PATH_MAX, email_file);
+    user_name[strlen(user_name)] = '\0';
+    user_email[strlen(user_email)] = '\0';
+    fclose(user_file);
+    fclose(email_file);
+
+    // branch name get
+    char *branch_path = malloc(PATH_MAX);
+    sprintf(branch_path, "%s/.magit/commits/branch.txt", repo);
+    FILE *branch_file = fopen(branch_path, "r");
+    char *branch_name = malloc(PATH_MAX);
+    fgets(branch_name, PATH_MAX, branch_file);
+    branch_name[strlen(branch_name)] = '\0';
+    fclose(branch_file);
+
+    // commit id get
+    char *id_path = malloc(PATH_MAX);
+    sprintf(id_path, "%s/.magit/commits/last_id.txt", repo);
+    FILE *id_file = fopen(id_path, "r");
+    char *id = malloc(PATH_MAX);
+    fgets(id, PATH_MAX, id_file);
+    id[strlen(id)] = '\0';
+
+    // commit prev get
+    char *prev_path = malloc(PATH_MAX);
+    sprintf(prev_path, "%s/.magit/commits/previd.txt", repo);
+    FILE *prev_file = fopen(prev_path, "r");
+    char *prev = malloc(PATH_MAX);
+    fgets(prev, PATH_MAX, prev_file);
+    prev[strlen(prev)] = '\0';
+
+    // file count get
+    char *stage_path = malloc(PATH_MAX);
+    sprintf(stage_path, "%s/.magit/stage", repo);
+    int file_count = filecounter(stage_path);
+    if (file_count == 0)
+    {
+        puts("nothing to commit");
+        return;
+    }
+
+    commit_info *comm = malloc(sizeof(commit_info));
+    comm->id = atoi(id) + 1;
+    comm->prev = atoi(prev);
+    comm->filecount = file_count;
+    strcpy(comm->branch, branch_name);
+    strcpy(comm->message, argv[3]);
+    strcpy(comm->author, user_name);
+    strcpy(comm->author_email, user_email);
+    time_t t = time(NULL);
+    struct tm tm = *localtime(&t);
+    comm->time = &tm;
+    printf("[%d %s] %s %d/%d/%d %d:%d:%d\n", comm->id, comm->message, comm->branch, tm.tm_year + 1900, tm.tm_mon + 1, tm.tm_mday, tm.tm_hour, tm.tm_min, tm.tm_sec);
+    char *comm_path = malloc(PATH_MAX);
+    sprintf(comm_path, "%s/.magit/branch/%s/%d", repo, comm->branch, comm->id);
+    mkdir(comm_path, 0777);
+    char *comm_info_path = malloc(PATH_MAX);
+
+    // copy all from stage to comm_path
+    if (comm->id == 0)
+    {
+        char *stage_path = malloc(PATH_MAX);
+        sprintf(stage_path, "%s/.magit/stage", repo);
+        char *cp_commad = malloc(PATH_MAX);
+        DIR *dir = opendir(stage_path);
+        struct dirent *fp;
+        dir = opendir(stage_path);
+        while ((fp = readdir(dir)) != NULL)
+        {
+            if (strcmp(fp->d_name, ".") == 0 || strcmp(fp->d_name, "..") == 0 || strcmp(fp->d_name, ".magit") == 0)
+            {
+                continue;
+            }
+            if (fp->d_type == DT_DIR)
+            {
+                char *path = malloc(PATH_MAX);
+                sprintf(path, "%s/%s", stage_path, fp->d_name);
+                char *cp_commad = malloc(PATH_MAX);
+                sprintf(cp_commad, "cp -r %s %s", path, comm_path);
+                system(cp_commad);
+            }
+            else if (fp->d_type == DT_REG)
+            {
+                char *path = malloc(PATH_MAX);
+                sprintf(path, "%s/%s", stage_path, fp->d_name);
+                char *cp_commad = malloc(PATH_MAX);
+                sprintf(cp_commad, "cp %s %s", path, comm_path);
+                system(cp_commad);
+            }
+        }
+    }
+    else
+    {
+        // copy files from previous commit
+        char *prev_comm_path = malloc(PATH_MAX);
+        sprintf(prev_comm_path, "%s/.magit/branch/%s/%d", repo, comm->branch, comm->prev);
+        DIR *dir = opendir(prev_comm_path);
+        struct dirent *fp;
+        while ((fp = readdir(dir)) != NULL)
+        {
+            if (strcmp(fp->d_name, ".") == 0 || strcmp(fp->d_name, "..") == 0 || strcmp(fp->d_name, ".magit") == 0)
+            {
+                continue;
+            }
+            if (fp->d_type == DT_DIR)
+            {
+                char *path = malloc(PATH_MAX);
+                sprintf(path, "%s/%s", prev_comm_path, fp->d_name);
+                char *cp_commad = malloc(PATH_MAX);
+                sprintf(cp_commad, "cp -r %s %s", path, comm_path);
+                system(cp_commad);
+            }
+            else if (fp->d_type == DT_REG)
+            {
+                char *path = malloc(PATH_MAX);
+                sprintf(path, "%s/%s", prev_comm_path, fp->d_name);
+                char *cp_commad = malloc(PATH_MAX);
+                sprintf(cp_commad, "cp %s %s", path, comm_path);
+                system(cp_commad);
+            }
+        }
+        char *stage_path = malloc(PATH_MAX);
+        sprintf(stage_path, "%s/.magit/stage", repo);
+        dir = opendir(stage_path);
+        while ((fp = readdir(dir)) != NULL)
+        {
+            if (strcmp(fp->d_name, ".") == 0 || strcmp(fp->d_name, "..") == 0)
+            {
+                continue;
+            }
+            if (fp->d_type == DT_DIR)
+            {
+                char *path = malloc(PATH_MAX);
+                sprintf(path, "%s/%s", stage_path, fp->d_name);
+                char *cp_commad = malloc(PATH_MAX);
+                sprintf(cp_commad, "cp -r %s %s", path, comm_path);
+                system(cp_commad);
+            }
+            else if (fp->d_type == DT_REG)
+            {
+                char *path = malloc(PATH_MAX);
+                sprintf(path, "%s/%s", stage_path, fp->d_name);
+                char *cp_commad = malloc(PATH_MAX);
+                sprintf(cp_commad, "cp %s %s", path, comm_path);
+                system(cp_commad);
+            }
+        }
+    }
+
+    // update text files like id last id and log
+    char *log_path = malloc(PATH_MAX);
+    sprintf(log_path, "%s/.magit/commits/log.txt", repo);
+    FILE *log_file = fopen(log_path, "a");
+    fprintf(log_file, "%s\n", comm->author);
+    fprintf(log_file, "%d\n\"%s\"\n%s\n%d/%d/%d %d:%d:%d\n%d\n", comm->id, comm->message, comm->branch, tm.tm_year + 1900, tm.tm_mon + 1, tm.tm_mday, tm.tm_hour, tm.tm_min, tm.tm_sec, comm->filecount);
+    fclose(log_file);
+    FILE *prev_file2 = fopen(prev_path, "w");
+    fprintf(prev_file2, "%d", comm->id);
+    fclose(prev_file2);
+    id_file = fopen(id_path, "w");
+    fprintf(id_file, "%d", comm->id);
+    fclose(id_file);
+    prev_file = fopen(prev_path, "w");
+    fprintf(prev_file, "%d", comm->id);
+    fclose(prev_file);
+
+    // commit info creation
+    sprintf(comm_info_path, "%s/.magit/branch/%s/info%d.txt", repo, comm->branch, comm->id);
+    FILE *comm_info_file = fopen(comm_info_path, "w");
+    fprintf(comm_info_file, "%s\n", comm->author);
+    fprintf(comm_info_file, "%d\n%s\n%s\n%d-%d-%d %d:%d:%d\n%d\n", comm->id, comm->message, comm->branch, tm.tm_year + 1900, tm.tm_mon + 1, tm.tm_mday, tm.tm_hour, tm.tm_min, tm.tm_sec, comm->filecount);
+
+    chdir(repo);
+    chdir(".magit");
+    system("rm -r stage");
+    mkdir("stage", 0777);
+    system("rm status.txt && touch status.txt");
+    system("rm add.txt && touch add.txt");
+    system("rm reset.txt && touch reset.txt");
+    return;
+}
+void logg(int argc, char **argv)
+{
+    char *cwd;
+    char buffer[PATH_MAX];
+    cwd = getcwd(buffer, PATH_MAX);
+    char *repo = CheckInit(cwd);
+    char *log_path = malloc(PATH_MAX);
+    sprintf(log_path, "%s/.magit/commits/log.txt", repo);
+    if (argc == 2)
+    {
+        char log[1000][4096];
+        FILE *log_file = fopen(log_path, "r");
+        char *line = malloc(PATH_MAX);
+        int i = 0;
+        while (fgets(line, PATH_MAX, log_file) != NULL)
+        {
+            strcpy(log[i], line);
+            i++;
+        }
+        commit_info comm[i];
+        int k = 0;
+        for (int j = 0; j < i; j++)
+        {
+            if (j % 6 == 0)
+            {
+                comm[k].time = malloc(sizeof(struct tm));
+                strcpy(comm[k].author, log[j]);
+                comm[k].id = atoi(log[j + 1]);
+                strcpy(comm[k].message, log[j + 2]);
+                strcpy(comm[k].branch, log[j + 3]);
+                sscanf(log[j + 4], "%d/%d/%d %d:%d:%d", &comm[k].time->tm_year, &comm[k].time->tm_mon, &comm[k].time->tm_mday, &comm[k].time->tm_hour, &comm[k].time->tm_min, &comm[k].time->tm_sec);
+                comm[k].filecount = atoi(log[j + 5]);
+                k++;
+            }
+        }
+        for (int j = k - 1; j >= 0; j--)
+        {
+            printf("author: %s", comm[j].author);
+            printf("commit id: %d\n", comm[j].id);
+            printf("message: %s", comm[j].message);
+            printf("time: %d/%d/%d %d:%d:%d\n", comm[j].time->tm_year, comm[j].time->tm_mon, comm[j].time->tm_mday, comm[j].time->tm_hour, comm[j].time->tm_min, comm[j].time->tm_sec);
+            printf("file count: %d\n", comm[j].filecount);
+            printf("\n");
+        }
+    }
+    else if (argc == 4 && !strcmp(argv[2], "-n"))
+    {
+        char log[1000][4096];
+        FILE *log_file = fopen(log_path, "r");
+        char *line = malloc(PATH_MAX);
+        int i = 0;
+        int n = atoi(argv[3]);
+        while (fgets(line, PATH_MAX, log_file) != NULL)
+        {
+            strcpy(log[i], line);
+            i++;
+        }
+        commit_info comm[i];
+        int k = 0;
+        for (int j = 0; j < i; j++)
+        {
+            if (j % 6 == 0)
+            {
+                comm[k].time = malloc(sizeof(struct tm));
+                strcpy(comm[k].author, log[j]);
+                comm[k].id = atoi(log[j + 1]);
+                strcpy(comm[k].message, log[j + 2]);
+                strcpy(comm[k].branch, log[j + 3]);
+                sscanf(log[j + 4], "%d/%d/%d %d:%d:%d", &comm[k].time->tm_year, &comm[k].time->tm_mon, &comm[k].time->tm_mday, &comm[k].time->tm_hour, &comm[k].time->tm_min, &comm[k].time->tm_sec);
+                comm[k].filecount = atoi(log[j + 5]);
+                k++;
+            }
+        }
+        if (n > k)
+        {
+            n = k;
+        }
+        for (int j = k - 1; j >= k - n; j--)
+        {
+            printf("author: %s", comm[j].author);
+            printf("commit id: %d\n", comm[j].id);
+            printf("message: %s", comm[j].message);
+            printf("time: %d/%d/%d %d:%d:%d\n", comm[j].time->tm_year, comm[j].time->tm_mon, comm[j].time->tm_mday, comm[j].time->tm_hour, comm[j].time->tm_min, comm[j].time->tm_sec);
+            printf("file count: %d\n", comm[j].filecount);
+            printf("\n");
+        }
+    }
+    else if (argc == 4 && !strcmp(argv[2], "-branch"))
+    {
+        char log[1000][4096];
+        FILE *log_file = fopen(log_path, "r");
+        char *line = malloc(PATH_MAX);
+        int i = 0;
+        while (fgets(line, PATH_MAX, log_file) != NULL)
+        {
+            strcpy(log[i], line);
+            i++;
+        }
+        commit_info comm[i];
+        int k = 0;
+        for (int j = 0; j < i; j++)
+        {
+            if (j % 6 == 0)
+            {
+                comm[k].time = malloc(sizeof(struct tm));
+                strcpy(comm[k].author, log[j]);
+                comm[k].id = atoi(log[j + 1]);
+                strcpy(comm[k].message, log[j + 2]);
+                strcpy(comm[k].branch, log[j + 3]);
+                sscanf(log[j + 4], "%d/%d/%d %d:%d:%d", &comm[k].time->tm_year, &comm[k].time->tm_mon, &comm[k].time->tm_mday, &comm[k].time->tm_hour, &comm[k].time->tm_min, &comm[k].time->tm_sec);
+                comm[k].filecount = atoi(log[j + 5]);
+                k++;
+            }
+        }
+        for (int j = k - 1; j >= 0; j--)
+        {
+            if (!strcmp(comm[j].branch, argv[3]))
+            {
+                printf("author: %s", comm[j].author);
+                printf("commit id: %d\n", comm[j].id);
+                printf("message: %s", comm[j].message);
+                printf("time: %d/%d/%d %d:%d:%d\n", comm[j].time->tm_year, comm[j].time->tm_mon, comm[j].time->tm_mday, comm[j].time->tm_hour, comm[j].time->tm_min, comm[j].time->tm_sec);
+                printf("file count: %d\n", comm[j].filecount);
+                printf("\n");
+            }
+        }
+    }
+    else if (argc == 4 && !strcmp(argv[2], "-author"))
+    {
+        char log[1000][4096];
+        FILE *log_file = fopen(log_path, "r");
+        char *line = malloc(PATH_MAX);
+        int i = 0;
+        while (fgets(line, PATH_MAX, log_file) != NULL)
+        {
+            strcpy(log[i], line);
+            i++;
+        }
+        commit_info comm[i];
+        int k = 0;
+        for (int j = 0; j < i; j++)
+        {
+            if (j % 6 == 0)
+            {
+                comm[k].time = malloc(sizeof(struct tm));
+                strcpy(comm[k].author, log[j]);
+                comm[k].id = atoi(log[j + 1]);
+                strcpy(comm[k].message, log[j + 2]);
+                strcpy(comm[k].branch, log[j + 3]);
+                sscanf(log[j + 4], "%d/%d/%d %d:%d:%d", &comm[k].time->tm_year, &comm[k].time->tm_mon, &comm[k].time->tm_mday, &comm[k].time->tm_hour, &comm[k].time->tm_min, &comm[k].time->tm_sec);
+                comm[k].filecount = atoi(log[j + 5]);
+                k++;
+            }
+        }
+        for (int j = k - 1; j >= 0; j--)
+        {
+            // fix later
+            if (!strncmp(comm[j].author, argv[3], strlen(argv[3])))
+            {
+                printf("author: %s", comm[j].author);
+                printf("commit id: %d\n", comm[j].id);
+                printf("message: %s", comm[j].message);
+                printf("time: %d/%d/%d %d:%d:%d\n", comm[j].time->tm_year, comm[j].time->tm_mon, comm[j].time->tm_mday, comm[j].time->tm_hour, comm[j].time->tm_min, comm[j].time->tm_sec);
+                printf("file count: %d\n", comm[j].filecount);
+                printf("\n");
+            }
+        }
+    }
+    else if (argc == 5 && !strcmp(argv[2], "-since"))
+    {
+        struct tm tm;
+        sscanf(argv[3], "%d/%d/%d", &tm.tm_year, &tm.tm_mon, &tm.tm_mday);
+        sscanf(argv[4], "%d:%d", &tm.tm_hour, &tm.tm_min);
+        char log[1000][4096];
+        FILE *log_file = fopen(log_path, "r");
+        char *line = malloc(PATH_MAX);
+        int i = 0;
+        int n = atoi(argv[3]);
+        while (fgets(line, PATH_MAX, log_file) != NULL)
+        {
+            strcpy(log[i], line);
+            i++;
+        }
+        commit_info comm[i];
+        int k = 0;
+        for (int j = 0; j < i; j++)
+        {
+            if (j % 6 == 0)
+            {
+                comm[k].time = malloc(sizeof(struct tm));
+                strcpy(comm[k].author, log[j]);
+                comm[k].id = atoi(log[j + 1]);
+                strcpy(comm[k].message, log[j + 2]);
+                strcpy(comm[k].branch, log[j + 3]);
+                sscanf(log[j + 4], "%d/%d/%d %d:%d:%d", &comm[k].time->tm_year, &comm[k].time->tm_mon, &comm[k].time->tm_mday, &comm[k].time->tm_hour, &comm[k].time->tm_min, &comm[k].time->tm_sec);
+                comm[k].filecount = atoi(log[j + 5]);
+                k++;
+            }
+        }
+        if (n > k)
+        {
+            n = k;
+        }
+        for (int j = k - 1; j >= k - n; j--)
+        {
+            if (comm[j].time->tm_year > tm.tm_year)
+            {
+                printf("author: %s", comm[j].author);
+                printf("commit id: %d\n", comm[j].id);
+                printf("message: %s", comm[j].message);
+                printf("time: %d/%d/%d %d:%d:%d\n", comm[j].time->tm_year, comm[j].time->tm_mon, comm[j].time->tm_mday, comm[j].time->tm_hour, comm[j].time->tm_min, comm[j].time->tm_sec);
+                printf("file count: %d\n", comm[j].filecount);
+                printf("\n");
+            }
+            else if (comm[j].time->tm_year == tm.tm_year && comm[j].time->tm_mon > tm.tm_mon)
+            {
+                printf("author: %s", comm[j].author);
+                printf("commit id: %d\n", comm[j].id);
+                printf("message: %s", comm[j].message);
+                printf("time: %d/%d/%d %d:%d:%d\n", comm[j].time->tm_year, comm[j].time->tm_mon, comm[j].time->tm_mday, comm[j].time->tm_hour, comm[j].time->tm_min, comm[j].time->tm_sec);
+                printf("file count: %d\n", comm[j].filecount);
+                printf("\n");
+            }
+            else if (comm[j].time->tm_year == tm.tm_year && comm[j].time->tm_mon == tm.tm_mon && comm[j].time->tm_mday > tm.tm_mday)
+            {
+                printf("author: %s", comm[j].author);
+                printf("commit id: %d\n", comm[j].id);
+                printf("message: %s", comm[j].message);
+                printf("time: %d/%d/%d %d:%d:%d\n", comm[j].time->tm_year, comm[j].time->tm_mon, comm[j].time->tm_mday, comm[j].time->tm_hour, comm[j].time->tm_min, comm[j].time->tm_sec);
+                printf("file count: %d\n", comm[j].filecount);
+                printf("\n");
+            }
+            else if (comm[j].time->tm_year == tm.tm_year && comm[j].time->tm_mon == tm.tm_mon && comm[j].time->tm_mday == tm.tm_mday && comm[j].time->tm_hour > tm.tm_hour)
+            {
+                printf("author: %s", comm[j].author);
+                printf("commit id: %d\n", comm[j].id);
+                printf("message: %s", comm[j].message);
+                printf("time: %d/%d/%d %d:%d:%d\n", comm[j].time->tm_year, comm[j].time->tm_mon, comm[j].time->tm_mday, comm[j].time->tm_hour, comm[j].time->tm_min, comm[j].time->tm_sec);
+                printf("file count: %d\n", comm[j].filecount);
+                printf("\n");
+            }
+            else if (comm[j].time->tm_year == tm.tm_year && comm[j].time->tm_mon == tm.tm_mon && comm[j].time->tm_mday == tm.tm_mday && comm[j].time->tm_hour == tm.tm_hour && comm[j].time->tm_min > tm.tm_min)
+            {
+                printf("author: %s", comm[j].author);
+                printf("commit id: %d\n", comm[j].id);
+                printf("message: %s", comm[j].message);
+                printf("time: %d/%d/%d %d:%d:%d\n", comm[j].time->tm_year, comm[j].time->tm_mon, comm[j].time->tm_mday, comm[j].time->tm_hour, comm[j].time->tm_min, comm[j].time->tm_sec);
+                printf("file count: %d\n", comm[j].filecount);
+                printf("\n");
+            }
+            else if (comm[j].time->tm_year == tm.tm_year && comm[j].time->tm_mon == tm.tm_mon && comm[j].time->tm_mday == tm.tm_mday && comm[j].time->tm_hour == tm.tm_hour && comm[j].time->tm_min == tm.tm_min && comm[j].time->tm_sec > tm.tm_sec)
+            {
+                printf("author: %s", comm[j].author);
+                printf("commit id: %d\n", comm[j].id);
+                printf("message: %s", comm[j].message);
+                printf("time: %d/%d/%d %d:%d:%d\n", comm[j].time->tm_year, comm[j].time->tm_mon, comm[j].time->tm_mday, comm[j].time->tm_hour, comm[j].time->tm_min, comm[j].time->tm_sec);
+                printf("file count: %d\n", comm[j].filecount);
+                printf("\n");
+            }
+        }
+    }
+    else if (argc == 5 && !strcmp(argv[2], "-before"))
+    {
+        struct tm tm;
+        sscanf(argv[3], "%d/%d/%d", &tm.tm_year, &tm.tm_mon, &tm.tm_mday);
+        sscanf(argv[4], "%d:%d", &tm.tm_hour, &tm.tm_min);
+        char log[1000][4096];
+        FILE *log_file = fopen(log_path, "r");
+        char *line = malloc(PATH_MAX);
+        int i = 0;
+        int n = atoi(argv[3]);
+        while (fgets(line, PATH_MAX, log_file) != NULL)
+        {
+            strcpy(log[i], line);
+            i++;
+        }
+        commit_info comm[i];
+        int k = 0;
+        for (int j = 0; j < i; j++)
+        {
+            if (j % 6 == 0)
+            {
+                comm[k].time = malloc(sizeof(struct tm));
+                strcpy(comm[k].author, log[j]);
+                comm[k].id = atoi(log[j + 1]);
+                strcpy(comm[k].message, log[j + 2]);
+                strcpy(comm[k].branch, log[j + 3]);
+                sscanf(log[j + 4], "%d/%d/%d %d:%d:%d", &comm[k].time->tm_year, &comm[k].time->tm_mon, &comm[k].time->tm_mday, &comm[k].time->tm_hour, &comm[k].time->tm_min, &comm[k].time->tm_sec);
+                comm[k].filecount = atoi(log[j + 5]);
+                k++;
+            }
+        }
+        if (n > k)
+        {
+            n = k;
+        }
+        for (int j = k - 1; j >= k - n; j--)
+        {
+            if (comm[j].time->tm_year < tm.tm_year)
+            {
+                printf("author: %s", comm[j].author);
+                printf("commit id: %d\n", comm[j].id);
+                printf("message: %s", comm[j].message);
+                printf("time: %d/%d/%d %d:%d:%d\n", comm[j].time->tm_year, comm[j].time->tm_mon, comm[j].time->tm_mday, comm[j].time->tm_hour, comm[j].time->tm_min, comm[j].time->tm_sec);
+                printf("file count: %d\n", comm[j].filecount);
+                printf("\n");
+            }
+            else if (comm[j].time->tm_year == tm.tm_year && comm[j].time->tm_mon < tm.tm_mon)
+            {
+                printf("author: %s", comm[j].author);
+                printf("commit id: %d\n", comm[j].id);
+                printf("message: %s", comm[j].message);
+                printf("time: %d/%d/%d %d:%d:%d\n", comm[j].time->tm_year, comm[j].time->tm_mon, comm[j].time->tm_mday, comm[j].time->tm_hour, comm[j].time->tm_min, comm[j].time->tm_sec);
+                printf("file count: %d\n", comm[j].filecount);
+                printf("\n");
+            }
+            else if (comm[j].time->tm_year == tm.tm_year && comm[j].time->tm_mon == tm.tm_mon && comm[j].time->tm_mday < tm.tm_mday)
+            {
+                printf("author: %s", comm[j].author);
+                printf("commit id: %d\n", comm[j].id);
+                printf("message: %s", comm[j].message);
+                printf("time: %d/%d/%d %d:%d:%d\n", comm[j].time->tm_year, comm[j].time->tm_mon, comm[j].time->tm_mday, comm[j].time->tm_hour, comm[j].time->tm_min, comm[j].time->tm_sec);
+                printf("file count: %d\n", comm[j].filecount);
+                printf("\n");
+            }
+            else if (comm[j].time->tm_year == tm.tm_year && comm[j].time->tm_mon == tm.tm_mon && comm[j].time->tm_mday == tm.tm_mday && comm[j].time->tm_hour < tm.tm_hour)
+            {
+                printf("author: %s", comm[j].author);
+                printf("commit id: %d\n", comm[j].id);
+                printf("message: %s", comm[j].message);
+                printf("time: %d/%d/%d %d:%d:%d\n", comm[j].time->tm_year, comm[j].time->tm_mon, comm[j].time->tm_mday, comm[j].time->tm_hour, comm[j].time->tm_min, comm[j].time->tm_sec);
+                printf("file count: %d\n", comm[j].filecount);
+            }
+            else if (comm[j].time->tm_year == tm.tm_year && comm[j].time->tm_mon == tm.tm_mon && comm[j].time->tm_mday == tm.tm_mday && comm[j].time->tm_hour == tm.tm_hour && comm[j].time->tm_min < tm.tm_min)
+            {
+                printf("author: %s", comm[j].author);
+                printf("commit id: %d\n", comm[j].id);
+                printf("message: %s", comm[j].message);
+                printf("time: %d/%d/%d %d:%d:%d\n", comm[j].time->tm_year, comm[j].time->tm_mon, comm[j].time->tm_mday, comm[j].time->tm_hour, comm[j].time->tm_min, comm[j].time->tm_sec);
+                printf("file count: %d\n", comm[j].filecount);
+            }
+        }
+    }
+    else if (argc == 4 && !strcmp(argv[2], "-search"))
+    {
+        char log[1000][4096];
+        FILE *log_file = fopen(log_path, "r");
+        char *line = malloc(PATH_MAX);
+        int i = 0;
+        while (fgets(line, PATH_MAX, log_file) != NULL)
+        {
+            strcpy(log[i], line);
+            i++;
+        }
+        commit_info comm[i];
+        int k = 0;
+        for (int j = 0; j < i; j++)
+        {
+            if (j % 6 == 0)
+            {
+                comm[k].time = malloc(sizeof(struct tm));
+                strcpy(comm[k].author, log[j]);
+                comm[k].id = atoi(log[j + 1]);
+                strcpy(comm[k].message, log[j + 2]);
+                strcpy(comm[k].branch, log[j + 3]);
+                sscanf(log[j + 4], "%d/%d/%d %d:%d:%d", &comm[k].time->tm_year, &comm[k].time->tm_mon, &comm[k].time->tm_mday, &comm[k].time->tm_hour, &comm[k].time->tm_min, &comm[k].time->tm_sec);
+                comm[k].filecount = atoi(log[j + 5]);
+                k++;
+            }
+        }
+        for (int j = k - 1; j >= 0; j--)
+        {
+            char *search = strstr(comm[j].message, argv[3]);
+            if (search != NULL)
+            {
+                printf("author: %s", comm[j].author);
+                printf("commit id: %d\n", comm[j].id);
+                printf("message: %s", comm[j].message);
+                printf("time: %d/%d/%d %d:%d:%d\n", comm[j].time->tm_year, comm[j].time->tm_mon, comm[j].time->tm_mday, comm[j].time->tm_hour, comm[j].time->tm_min, comm[j].time->tm_sec);
+                printf("file count: %d\n", comm[j].filecount);
+                printf("\n");
+            }
+        }
+    }
+}
+void checkout(int argc, char **argv)
+{
 }
