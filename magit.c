@@ -35,6 +35,8 @@ int filecounter(char *);
 char *changedir(char *);
 void printcwd();
 void checkout(int, char **);
+void branch(int, char **);
+void clean();
 
 typedef struct
 {
@@ -145,8 +147,12 @@ int main(int argc, char *argv[])
                     sprintf(abspath, "%s/%s", cwd, argv[i]);
                     if (CheckStage(abspath))
                     {
-                        printf("%s is already staged\n", argv[i]);
-                        continue;
+                        // delete from stage folder
+                        char *path = malloc(PATH_MAX);
+                        path = FindPath(argv[2]);
+                        char *rm_path = malloc(PATH_MAX);
+                        sprintf(rm_path, "rm -r %s/.magit/stage%s", repo, path);
+                        system(rm_path);
                     }
                     char tmp[PATH_MAX];
                     strcpy(tmp, argv[i]);
@@ -177,8 +183,12 @@ int main(int argc, char *argv[])
                     sprintf(abspath, "%s/%s", cwd, argv[i]);
                     if (CheckStage(abspath))
                     {
-                        printf("%s is already staged\n", argv[i]);
-                        continue;
+                        // delete from stage folder
+                        char *path = malloc(PATH_MAX);
+                        path = FindPath(argv[2]);
+                        char *rm_path = malloc(PATH_MAX);
+                        sprintf(rm_path, "rm -r %s/.magit/stage%s", repo, path);
+                        system(rm_path);
                     }
                     char *x = changedir(argv[i]);
                     char *newcwd = malloc(PATH_MAX);
@@ -288,6 +298,10 @@ int main(int argc, char *argv[])
         {
             checkout(argc, argv);
         }
+        else if (!strcmp(argv[1], "branch"))
+        {
+            branch(argc, argv);
+        }
         else
         {
             INVALID
@@ -296,6 +310,40 @@ int main(int argc, char *argv[])
     return 0;
 }
 
+void clean()
+{
+    // clear repo except .magit
+    char *cwd;
+    char buffer[PATH_MAX];
+    cwd = getcwd(buffer, PATH_MAX);
+    char *repo = CheckInit(cwd);
+    DIR *dir = opendir(repo);
+    struct dirent *fp;
+    while ((fp = readdir(dir)) != NULL)
+    {
+        if (strcmp(fp->d_name, ".magit") == 0 || strcmp(fp->d_name, ".") == 0 || strcmp(fp->d_name, "..") == 0)
+        {
+            continue;
+        }
+        if (fp->d_type == DT_DIR)
+        {
+            char *path = malloc(PATH_MAX);
+            sprintf(path, "%s/%s", repo, fp->d_name);
+            char *command = malloc(PATH_MAX);
+            sprintf(command, "rm -r %s", path);
+            system(command);
+        }
+        else if (fp->d_type == DT_REG)
+        {
+            char *path = malloc(PATH_MAX);
+            sprintf(path, "%s/%s", repo, fp->d_name);
+            char *command = malloc(PATH_MAX);
+            sprintf(command, "rm %s", path);
+            system(command);
+        }
+    }
+    return;
+}
 void printcwd()
 {
     char *cwd;
@@ -411,7 +459,15 @@ int copyFile(char *sourcePath, char *destinationPath)
     }
     chdir("/");
     chdir(destinationPath);
-    FILE *destinationFile = fopen(destinationPath, "wb");
+    FILE *destinationFile = fopen(destinationPath, "r");
+    if (destinationFile != NULL)
+    {
+        // delete the file
+        char *rm_path = malloc(PATH_MAX);
+        sprintf(rm_path, "rm %s", destinationPath);
+        system(rm_path);
+    }
+    destinationFile = fopen(destinationPath, "wb");
     char buffer[BUFFER_SIZE];
     size_t size;
     while ((size = fread(buffer, 1, BUFFER_SIZE, sourceFile)) > 0)
@@ -549,6 +605,7 @@ void init()
     FILE *last_id = fopen(".magit/commits/last_id.txt", "w");
     FILE *log = fopen(".magit/commits/log.txt", "w");
     FILE *prevbranch = fopen(".magit/commits/prevbranch.txt", "w");
+    FILE *list = fopen(".magit/branch/master/list.txt", "w");
     fprintf(branch, "master");
     fprintf(prevbranch, "master");
     fprintf(previd, "0");
@@ -759,7 +816,7 @@ void reset(int mode, char *str)
             return;
         }
         purepath = purepath + strlen(repo);
-        sprintf(rm_path, "rm %s/.magit/stage/%s", repo, purepath);
+        sprintf(rm_path, "rm -r %s/.magit/stage/%s", repo, purepath);
         system(rm_path);
         char *status_path = malloc(PATH_MAX);
         sprintf(status_path, "%s/.magit/status.txt", repo);
@@ -995,11 +1052,44 @@ void commit(int argc, char **argv)
     }
     else
     {
-        // copy files from previous commit
+        // check if list.txt has any commit inside if not read prev commit from head.txt
+        char *list_path = malloc(PATH_MAX);
+        sprintf(list_path, "%s/.magit/branch/%s/list.txt", repo, comm->branch);
+        FILE *list_file = fopen(list_path, "r");
+        char *line = malloc(PATH_MAX);
+        char *prev_branch = malloc(PATH_MAX);
+        int i = 0;
+        while (fgets(line, PATH_MAX, list_file) != NULL)
+        {
+            i++;
+        }
+        fclose(list_file);
+        char *pre_branch_path = malloc(PATH_MAX);
+        int prev_id;
+        if (i == 0)
+        {
+            sprintf(pre_branch_path, "%s/.magit/branch/%s/head.txt", repo, comm->branch);
+            FILE *pre_branch_file = fopen(pre_branch_path, "r");
+            char *line = malloc(PATH_MAX);
+            fgets(line, PATH_MAX, pre_branch_file);
+            prev_id = atoi(line);
+            fgets(line, PATH_MAX, pre_branch_file);
+            strcpy(prev_branch, line);
+            fclose(pre_branch_file);
+        }
+        else
+        {
+            prev_id = atoi(line);
+            strcpy(prev_branch, comm->branch);
+        }
+
         char *prev_comm_path = malloc(PATH_MAX);
-        sprintf(prev_comm_path, "%s/.magit/branch/%s/%d", repo, comm->branch, comm->prev);
+        sprintf(prev_comm_path, "%s/.magit/branch/%s/%d", repo, prev_branch, prev_id);
+        char *cp_commad = malloc(PATH_MAX);
+        // copy all from prev_comm_path to comm_path
         DIR *dir = opendir(prev_comm_path);
         struct dirent *fp;
+        dir = opendir(prev_comm_path);
         while ((fp = readdir(dir)) != NULL)
         {
             if (strcmp(fp->d_name, ".") == 0 || strcmp(fp->d_name, "..") == 0 || strcmp(fp->d_name, ".magit") == 0)
@@ -1023,33 +1113,44 @@ void commit(int argc, char **argv)
                 system(cp_commad);
             }
         }
+        // copy all from stage to comm_path
         char *stage_path = malloc(PATH_MAX);
         sprintf(stage_path, "%s/.magit/stage", repo);
-        dir = opendir(stage_path);
-        while ((fp = readdir(dir)) != NULL)
+        char *cp_commad2 = malloc(PATH_MAX);
+        DIR *dir2 = opendir(stage_path);
+        struct dirent *fp2;
+        dir2 = opendir(stage_path);
+        while ((fp2 = readdir(dir2)) != NULL)
         {
-            if (strcmp(fp->d_name, ".") == 0 || strcmp(fp->d_name, "..") == 0)
+            if (strcmp(fp2->d_name, ".") == 0 || strcmp(fp2->d_name, "..") == 0 || strcmp(fp2->d_name, ".magit") == 0)
             {
                 continue;
             }
-            if (fp->d_type == DT_DIR)
+            if (fp2->d_type == DT_DIR)
             {
                 char *path = malloc(PATH_MAX);
-                sprintf(path, "%s/%s", stage_path, fp->d_name);
+                sprintf(path, "%s/%s", stage_path, fp2->d_name);
                 char *cp_commad = malloc(PATH_MAX);
                 sprintf(cp_commad, "cp -r %s %s", path, comm_path);
                 system(cp_commad);
             }
-            else if (fp->d_type == DT_REG)
+            else if (fp2->d_type == DT_REG)
             {
                 char *path = malloc(PATH_MAX);
-                sprintf(path, "%s/%s", stage_path, fp->d_name);
+                sprintf(path, "%s/%s", stage_path, fp2->d_name);
                 char *cp_commad = malloc(PATH_MAX);
                 sprintf(cp_commad, "cp %s %s", path, comm_path);
                 system(cp_commad);
             }
         }
     }
+
+    // update branch head
+    char *list_path = malloc(PATH_MAX);
+    sprintf(list_path, "%s/.magit/branch/%s/list.txt", repo, comm->branch);
+    FILE *list_file = fopen(list_path, "a");
+    fprintf(list_file, "%d\n", comm->id);
+    fclose(list_file);
 
     // update text files like id last id and log
     char *log_path = malloc(PATH_MAX);
@@ -1123,6 +1224,7 @@ void logg(int argc, char **argv)
             printf("author: %s", comm[j].author);
             printf("commit id: %d\n", comm[j].id);
             printf("message: %s", comm[j].message);
+            printf("branch: %s", comm[j].branch);
             printf("time: %d/%d/%d %d:%d:%d\n", comm[j].time->tm_year, comm[j].time->tm_mon, comm[j].time->tm_mday, comm[j].time->tm_hour, comm[j].time->tm_min, comm[j].time->tm_sec);
             printf("file count: %d\n", comm[j].filecount);
             printf("\n");
@@ -1165,6 +1267,7 @@ void logg(int argc, char **argv)
             printf("author: %s", comm[j].author);
             printf("commit id: %d\n", comm[j].id);
             printf("message: %s", comm[j].message);
+            printf("branch: %s\n", comm[j].branch);
             printf("time: %d/%d/%d %d:%d:%d\n", comm[j].time->tm_year, comm[j].time->tm_mon, comm[j].time->tm_mday, comm[j].time->tm_hour, comm[j].time->tm_min, comm[j].time->tm_sec);
             printf("file count: %d\n", comm[j].filecount);
             printf("\n");
@@ -1199,11 +1302,12 @@ void logg(int argc, char **argv)
         }
         for (int j = k - 1; j >= 0; j--)
         {
-            if (!strcmp(comm[j].branch, argv[3]))
+            if (!strncmp(comm[j].branch, argv[3], strlen(argv[3])))
             {
                 printf("author: %s", comm[j].author);
                 printf("commit id: %d\n", comm[j].id);
                 printf("message: %s", comm[j].message);
+                printf("branch: %s", comm[j].branch);
                 printf("time: %d/%d/%d %d:%d:%d\n", comm[j].time->tm_year, comm[j].time->tm_mon, comm[j].time->tm_mday, comm[j].time->tm_hour, comm[j].time->tm_min, comm[j].time->tm_sec);
                 printf("file count: %d\n", comm[j].filecount);
                 printf("\n");
@@ -1245,6 +1349,7 @@ void logg(int argc, char **argv)
                 printf("author: %s", comm[j].author);
                 printf("commit id: %d\n", comm[j].id);
                 printf("message: %s", comm[j].message);
+                printf("branch: %s", comm[j].branch);
                 printf("time: %d/%d/%d %d:%d:%d\n", comm[j].time->tm_year, comm[j].time->tm_mon, comm[j].time->tm_mday, comm[j].time->tm_hour, comm[j].time->tm_min, comm[j].time->tm_sec);
                 printf("file count: %d\n", comm[j].filecount);
                 printf("\n");
@@ -1293,6 +1398,7 @@ void logg(int argc, char **argv)
                 printf("author: %s", comm[j].author);
                 printf("commit id: %d\n", comm[j].id);
                 printf("message: %s", comm[j].message);
+                printf("branch: %s", comm[j].branch);
                 printf("time: %d/%d/%d %d:%d:%d\n", comm[j].time->tm_year, comm[j].time->tm_mon, comm[j].time->tm_mday, comm[j].time->tm_hour, comm[j].time->tm_min, comm[j].time->tm_sec);
                 printf("file count: %d\n", comm[j].filecount);
                 printf("\n");
@@ -1302,6 +1408,7 @@ void logg(int argc, char **argv)
                 printf("author: %s", comm[j].author);
                 printf("commit id: %d\n", comm[j].id);
                 printf("message: %s", comm[j].message);
+                printf("branch: %s", comm[j].branch);
                 printf("time: %d/%d/%d %d:%d:%d\n", comm[j].time->tm_year, comm[j].time->tm_mon, comm[j].time->tm_mday, comm[j].time->tm_hour, comm[j].time->tm_min, comm[j].time->tm_sec);
                 printf("file count: %d\n", comm[j].filecount);
                 printf("\n");
@@ -1311,6 +1418,7 @@ void logg(int argc, char **argv)
                 printf("author: %s", comm[j].author);
                 printf("commit id: %d\n", comm[j].id);
                 printf("message: %s", comm[j].message);
+                printf("branch: %s", comm[j].branch);
                 printf("time: %d/%d/%d %d:%d:%d\n", comm[j].time->tm_year, comm[j].time->tm_mon, comm[j].time->tm_mday, comm[j].time->tm_hour, comm[j].time->tm_min, comm[j].time->tm_sec);
                 printf("file count: %d\n", comm[j].filecount);
                 printf("\n");
@@ -1320,6 +1428,7 @@ void logg(int argc, char **argv)
                 printf("author: %s", comm[j].author);
                 printf("commit id: %d\n", comm[j].id);
                 printf("message: %s", comm[j].message);
+                printf("branch: %s", comm[j].branch);
                 printf("time: %d/%d/%d %d:%d:%d\n", comm[j].time->tm_year, comm[j].time->tm_mon, comm[j].time->tm_mday, comm[j].time->tm_hour, comm[j].time->tm_min, comm[j].time->tm_sec);
                 printf("file count: %d\n", comm[j].filecount);
                 printf("\n");
@@ -1329,6 +1438,7 @@ void logg(int argc, char **argv)
                 printf("author: %s", comm[j].author);
                 printf("commit id: %d\n", comm[j].id);
                 printf("message: %s", comm[j].message);
+                printf("branch: %s", comm[j].branch);
                 printf("time: %d/%d/%d %d:%d:%d\n", comm[j].time->tm_year, comm[j].time->tm_mon, comm[j].time->tm_mday, comm[j].time->tm_hour, comm[j].time->tm_min, comm[j].time->tm_sec);
                 printf("file count: %d\n", comm[j].filecount);
                 printf("\n");
@@ -1338,6 +1448,7 @@ void logg(int argc, char **argv)
                 printf("author: %s", comm[j].author);
                 printf("commit id: %d\n", comm[j].id);
                 printf("message: %s", comm[j].message);
+                printf("branch: %s", comm[j].branch);
                 printf("time: %d/%d/%d %d:%d:%d\n", comm[j].time->tm_year, comm[j].time->tm_mon, comm[j].time->tm_mday, comm[j].time->tm_hour, comm[j].time->tm_min, comm[j].time->tm_sec);
                 printf("file count: %d\n", comm[j].filecount);
                 printf("\n");
@@ -1386,6 +1497,7 @@ void logg(int argc, char **argv)
                 printf("author: %s", comm[j].author);
                 printf("commit id: %d\n", comm[j].id);
                 printf("message: %s", comm[j].message);
+                printf("branch: %s", comm[j].branch);
                 printf("time: %d/%d/%d %d:%d:%d\n", comm[j].time->tm_year, comm[j].time->tm_mon, comm[j].time->tm_mday, comm[j].time->tm_hour, comm[j].time->tm_min, comm[j].time->tm_sec);
                 printf("file count: %d\n", comm[j].filecount);
                 printf("\n");
@@ -1395,6 +1507,7 @@ void logg(int argc, char **argv)
                 printf("author: %s", comm[j].author);
                 printf("commit id: %d\n", comm[j].id);
                 printf("message: %s", comm[j].message);
+                printf("branch: %s", comm[j].branch);
                 printf("time: %d/%d/%d %d:%d:%d\n", comm[j].time->tm_year, comm[j].time->tm_mon, comm[j].time->tm_mday, comm[j].time->tm_hour, comm[j].time->tm_min, comm[j].time->tm_sec);
                 printf("file count: %d\n", comm[j].filecount);
                 printf("\n");
@@ -1404,6 +1517,7 @@ void logg(int argc, char **argv)
                 printf("author: %s", comm[j].author);
                 printf("commit id: %d\n", comm[j].id);
                 printf("message: %s", comm[j].message);
+                printf("branch: %s", comm[j].branch);
                 printf("time: %d/%d/%d %d:%d:%d\n", comm[j].time->tm_year, comm[j].time->tm_mon, comm[j].time->tm_mday, comm[j].time->tm_hour, comm[j].time->tm_min, comm[j].time->tm_sec);
                 printf("file count: %d\n", comm[j].filecount);
                 printf("\n");
@@ -1413,16 +1527,20 @@ void logg(int argc, char **argv)
                 printf("author: %s", comm[j].author);
                 printf("commit id: %d\n", comm[j].id);
                 printf("message: %s", comm[j].message);
+                printf("branch: %s", comm[j].branch);
                 printf("time: %d/%d/%d %d:%d:%d\n", comm[j].time->tm_year, comm[j].time->tm_mon, comm[j].time->tm_mday, comm[j].time->tm_hour, comm[j].time->tm_min, comm[j].time->tm_sec);
                 printf("file count: %d\n", comm[j].filecount);
+                printf("\n");
             }
             else if (comm[j].time->tm_year == tm.tm_year && comm[j].time->tm_mon == tm.tm_mon && comm[j].time->tm_mday == tm.tm_mday && comm[j].time->tm_hour == tm.tm_hour && comm[j].time->tm_min < tm.tm_min)
             {
                 printf("author: %s", comm[j].author);
                 printf("commit id: %d\n", comm[j].id);
                 printf("message: %s", comm[j].message);
+                printf("branch: %s", comm[j].branch);
                 printf("time: %d/%d/%d %d:%d:%d\n", comm[j].time->tm_year, comm[j].time->tm_mon, comm[j].time->tm_mday, comm[j].time->tm_hour, comm[j].time->tm_min, comm[j].time->tm_sec);
                 printf("file count: %d\n", comm[j].filecount);
+                printf("\n");
             }
         }
     }
@@ -1461,6 +1579,7 @@ void logg(int argc, char **argv)
                 printf("author: %s", comm[j].author);
                 printf("commit id: %d\n", comm[j].id);
                 printf("message: %s", comm[j].message);
+                printf("branch: %s", comm[j].branch);
                 printf("time: %d/%d/%d %d:%d:%d\n", comm[j].time->tm_year, comm[j].time->tm_mon, comm[j].time->tm_mday, comm[j].time->tm_hour, comm[j].time->tm_min, comm[j].time->tm_sec);
                 printf("file count: %d\n", comm[j].filecount);
                 printf("\n");
@@ -1470,4 +1589,353 @@ void logg(int argc, char **argv)
 }
 void checkout(int argc, char **argv)
 {
+    if (!strcmp(argv[2], "HEAD"))
+    {
+    }
+    else if (!strncmp(argv[2], "HEAD-", 5))
+    {
+    }
+    else
+    {
+        char *cwd;
+        char *buffer = malloc(PATH_MAX);
+        cwd = getcwd(buffer, PATH_MAX);
+        char *repo = CheckInit(cwd);
+        char *branch_path = malloc(PATH_MAX);
+        sprintf(branch_path, "%s/.magit/branch", repo);
+        DIR *dir = opendir(branch_path);
+        struct dirent *fp;
+        int flag = 0;
+        // get lastid from commit folder
+        char *lastid_path = malloc(PATH_MAX);
+        sprintf(lastid_path, "%s/.magit/commits/last_id.txt", repo);
+        FILE *lastid_file = fopen(lastid_path, "r");
+        char *lastid = malloc(PATH_MAX);
+        fgets(lastid, PATH_MAX, lastid_file);
+        int last_id = atoi(lastid);
+        while ((fp = readdir(dir)) != NULL)
+        {
+            if (strcmp(fp->d_name, ".") == 0 || strcmp(fp->d_name, "..") == 0)
+            {
+                continue;
+            }
+            if (fp->d_type == DT_DIR)
+            {
+                if (!strcmp(fp->d_name, argv[2]))
+                {
+                    flag = 1;
+                    break;
+                }
+            }
+        }
+        if (flag)
+        {
+            // check if we have un commited files in stage folder
+            char *stage_path = malloc(PATH_MAX);
+            sprintf(stage_path, "%s/.magit/stage", repo);
+            int count = filecounter(stage_path);
+            if (count > 0)
+            {
+                puts("you have uncommited files in stage folder");
+                return;
+            }
+            // chxeck if any commit exist in the branch and if exist copy all files from the last commit to the current directory
+            sprintf(branch_path, "%s/.magit/branch/%s", repo, argv[2]);
+            dir = opendir(branch_path);
+            int max_id = -1;
+            while ((fp = readdir(dir)) != NULL)
+            {
+                if (strcmp(fp->d_name, ".") == 0 || strcmp(fp->d_name, "..") == 0 || strcmp(fp->d_name, ".magit") == 0)
+                {
+                    continue;
+                }
+                if (fp->d_type == DT_DIR)
+                {
+                    int id = atoi(fp->d_name);
+                    if (id > max_id)
+                    {
+                        max_id = id;
+                    }
+                }
+            }
+            if (last_id == -1)
+            {
+                puts("no commits in this branch");
+                return;
+            }
+            // if no commit exist and we have to checkout to parent commit
+            if (max_id == -1)
+            {
+                // get the head commit id and branch from info.txt and copy files from that commit into repo
+                char *info_path = malloc(PATH_MAX);
+                sprintf(info_path, "%s/.magit/branch/%s/head.txt", repo, argv[2]);
+                FILE *info_file = fopen(info_path, "r");
+                char *line = malloc(PATH_MAX);
+                fgets(line, PATH_MAX, info_file);
+                int id = atoi(line);
+                fgets(line, PATH_MAX, info_file);
+                char *branch = malloc(PATH_MAX);
+                strcpy(branch, line);
+                fclose(info_file);
+                char *last_commit_path = malloc(PATH_MAX);
+                sprintf(last_commit_path, "%s/.magit/branch/%s/%d", repo, branch, id);
+                dir = opendir(last_commit_path);
+                clean();
+                while ((fp = readdir(dir)) != NULL)
+                {
+                    if (strcmp(fp->d_name, ".") == 0 || strcmp(fp->d_name, "..") == 0 || strcmp(fp->d_name, ".magit") == 0)
+                    {
+                        continue;
+                    }
+                    if (fp->d_type == DT_DIR)
+                    {
+                        char *path = malloc(PATH_MAX);
+                        sprintf(path, "%s/%s", last_commit_path, fp->d_name);
+                        char *cp_commad = malloc(PATH_MAX);
+                        sprintf(cp_commad, "cp -r %s %s", path, repo);
+                        system(cp_commad);
+                    }
+                    else if (fp->d_type == DT_REG)
+                    {
+                        char *path = malloc(PATH_MAX);
+                        sprintf(path, "%s/%s", last_commit_path, fp->d_name);
+                        char *cp_commad = malloc(PATH_MAX);
+                        sprintf(cp_commad, "cp %s %s", path, repo);
+                        system(cp_commad);
+                    }
+                }
+                // update commit folder txts
+                char *commit_path = malloc(PATH_MAX);
+                sprintf(commit_path, "%s/.magit/commits/branch.txt", repo);
+                FILE *branch_file = fopen(commit_path, "w");
+                fprintf(branch_file, "%s", argv[2]);
+                fclose(branch_file);
+                sprintf(commit_path, "%s/.magit/commits/previd.txt", repo);
+                FILE *prev_file = fopen(commit_path, "w");
+                fprintf(prev_file, "%d", id);
+                fclose(prev_file);
+                // debug prints
+
+                return;
+            }
+            // copy files from last commit
+            clean();
+            char *last_commit_path = malloc(PATH_MAX);
+            sprintf(last_commit_path, "%s/.magit/branch/%s/%d", repo, argv[2], max_id);
+            dir = opendir(last_commit_path);
+            while ((fp = readdir(dir)) != NULL)
+            {
+                if (strcmp(fp->d_name, ".") == 0 || strcmp(fp->d_name, "..") == 0 || strcmp(fp->d_name, ".magit") == 0)
+                {
+                    continue;
+                }
+                if (fp->d_type == DT_DIR)
+                {
+                    char *path = malloc(PATH_MAX);
+                    sprintf(path, "%s/%s", last_commit_path, fp->d_name);
+                    char *cp_commad = malloc(PATH_MAX);
+                    sprintf(cp_commad, "cp -r %s %s", path, repo);
+                    system(cp_commad);
+                }
+                else if (fp->d_type == DT_REG)
+                {
+                    char *path = malloc(PATH_MAX);
+                    sprintf(path, "%s/%s", last_commit_path, fp->d_name);
+                    char *cp_commad = malloc(PATH_MAX);
+                    sprintf(cp_commad, "cp %s %s", path, repo);
+                    system(cp_commad);
+                }
+            }
+            // update commit folder txts
+            char *commit_path = malloc(PATH_MAX);
+            sprintf(commit_path, "%s/.magit/commits/previd.txt", repo);
+            FILE *prev_file = fopen(commit_path, "w");
+            fprintf(prev_file, "%d", max_id);
+            fclose(prev_file);
+
+            char *branchfile_path = malloc(PATH_MAX);
+            sprintf(branchfile_path, "%s/.magit/commits/branch.txt", repo);
+            FILE *branchfile = fopen(branchfile_path, "w");
+            fprintf(branchfile, "%s", argv[2]);
+            return;
+        }
+        else
+        { // check if any thing other than numbers are in argv2 error
+            for (int i = 0; i < strlen(argv[2]); i++)
+            {
+                if (argv[2][i] < '0' || argv[2][i] > '9')
+                {
+                    puts("branch or commit not found");
+                    return;
+                }
+            }
+            // search all branch folders for a commite with argv[2] id
+            int flag = 0;
+            char *branch_path = malloc(PATH_MAX);
+            sprintf(branch_path, "%s/.magit/branch", repo);
+            dir = opendir(branch_path);
+            struct dirent *fp;
+            char *branch_name = malloc(PATH_MAX);
+            while ((fp = readdir(dir)) != NULL)
+            {
+                if (strcmp(fp->d_name, ".") == 0 || strcmp(fp->d_name, "..") == 0 || strcmp(fp->d_name, ".magit") == 0)
+                {
+                    continue;
+                }
+                if (fp->d_type == DT_DIR)
+                {
+                    sprintf(branch_path, "%s/.magit/branch/%s", repo, fp->d_name);
+                    DIR *dir2 = opendir(branch_path);
+                    struct dirent *fp2;
+                    while ((fp2 = readdir(dir2)) != NULL)
+                    {
+                        if (strcmp(fp2->d_name, ".") == 0 || strcmp(fp2->d_name, "..") == 0 || strcmp(fp2->d_name, ".magit") == 0)
+                        {
+                            continue;
+                        }
+                        if (fp2->d_type == DT_DIR)
+                        {
+                            int id = atoi(fp2->d_name);
+                            if (id == atoi(argv[2]))
+                            {
+                                flag = 1;
+                                strcpy(branch_name, fp->d_name);
+                                break;
+                            }
+                        }
+                    }
+                    if (flag)
+                    {
+                        break;
+                    }
+                }
+            }
+            if (flag)
+            {
+                // check if we have un commited files in stage folder
+                char *stage_path = malloc(PATH_MAX);
+                sprintf(stage_path, "%s/.magit/stage", repo);
+                int count = filecounter(stage_path);
+                if (count > 0)
+                {
+                    puts("you have uncommited files in stage folder");
+                    return;
+                }
+                clean();
+                // copy files from commit
+                char *last_commit_path = malloc(PATH_MAX);
+                sprintf(last_commit_path, "%s/.magit/branch/%s/%d", repo, branch_name, atoi(argv[2]));
+                dir = opendir(last_commit_path);
+                struct dirent *fp;
+                while ((fp = readdir(dir)) != NULL)
+                {
+                    if (strcmp(fp->d_name, ".") == 0 || strcmp(fp->d_name, "..") == 0 || strcmp(fp->d_name, ".magit") == 0)
+                    {
+                        continue;
+                    }
+                    if (fp->d_type == DT_DIR)
+                    {
+                        char *path = malloc(PATH_MAX);
+                        sprintf(path, "%s/%s", last_commit_path, fp->d_name);
+                        char *cp_commad = malloc(PATH_MAX);
+                        sprintf(cp_commad, "cp -r %s %s", path, repo);
+                        system(cp_commad);
+                    }
+                    else if (fp->d_type == DT_REG)
+                    {
+                        char *path = malloc(PATH_MAX);
+                        sprintf(path, "%s/%s", last_commit_path, fp->d_name);
+                        char *cp_commad = malloc(PATH_MAX);
+                        sprintf(cp_commad, "cp %s %s", path, repo);
+                        system(cp_commad);
+                    }
+                }
+                // update commit folder txts
+                char *commit_path = malloc(PATH_MAX);
+                sprintf(commit_path, "%s/.magit/commits/previd.txt", repo);
+                FILE *prev_file = fopen(commit_path, "w");
+                fprintf(prev_file, "%d", atoi(argv[2]));
+                fclose(prev_file);
+                sprintf(commit_path, "%s/.magit/commits/branch.txt", repo);
+                FILE *branch_file = fopen(commit_path, "w");
+                fprintf(branch_file, "%s", branch_name);
+                fclose(branch_file);
+                return;
+            }
+            else
+            {
+                puts("branch or commit not found");
+                return;
+            }
+        }
+    }
+}
+void branch(int argc, char **argv)
+{
+    char *branch_path = malloc(PATH_MAX);
+    char *cwd;
+    char buffer[PATH_MAX];
+    cwd = getcwd(buffer, PATH_MAX);
+    char *repo = CheckInit(cwd);
+    sprintf(branch_path, "%s/.magit/branch", repo);
+    DIR *dir = opendir(branch_path);
+    struct dirent *fp;
+    if (argc == 2 && !strcmp(argv[1], "branch"))
+    {
+        while ((fp = readdir(dir)) != NULL)
+        {
+            if (strcmp(fp->d_name, ".") == 0 || strcmp(fp->d_name, "..") == 0)
+            {
+                continue;
+            }
+            if (fp->d_type == DT_DIR)
+            {
+                printf("%s\n", fp->d_name);
+            }
+        }
+        return;
+    }
+    else
+    {
+        while ((fp = readdir(dir)) != NULL)
+        {
+            if (strcmp(fp->d_name, ".") == 0 || strcmp(fp->d_name, "..") == 0 || strcmp(fp->d_name, ".magit") == 0)
+            {
+                continue;
+            }
+            if (fp->d_type == DT_DIR)
+            {
+                if (!strcmp(fp->d_name, argv[2]))
+                {
+                    puts("branch already exists");
+                    return;
+                }
+            }
+        }
+        char *branch_path2 = malloc(PATH_MAX);
+        sprintf(branch_path2, "%s/.magit/branch/%s", repo, argv[2]);
+        mkdir(branch_path2, 0777);
+        char *branch_path3 = malloc(PATH_MAX);
+        sprintf(branch_path3, "%s/.magit/branch/%s/head.txt", repo, argv[2]);
+        FILE *branch_file = fopen(branch_path3, "w");
+        char *previd_path = malloc(PATH_MAX);
+        sprintf(previd_path, "%s/.magit/commits/previd.txt", repo);
+        FILE *previd_file = fopen(previd_path, "r");
+        char *line = malloc(PATH_MAX);
+        fgets(line, PATH_MAX, previd_file);
+        fprintf(branch_file, "%s\n", line);
+        fclose(previd_file);
+        char *branchfile_path = malloc(PATH_MAX);
+        sprintf(branchfile_path, "%s/.magit/commits/branch.txt", repo);
+        FILE *branchfile = fopen(branchfile_path, "r");
+        fgets(line, PATH_MAX, branchfile);
+        fprintf(branch_file, "%s", line);
+        fclose(branchfile);
+        fclose(branch_file);
+        char *list_path = malloc(PATH_MAX);
+        sprintf(list_path, "%s/.magit/branch/%s/list.txt", repo, argv[2]);
+        FILE *list_file = fopen(list_path, "w");
+        fclose(list_file);
+        return;
+    }
 }
