@@ -37,6 +37,13 @@ void printcwd();
 void checkout(int, char **);
 void branch(int, char **);
 void clean();
+void status(int, char **);
+char *branchfinder(int);
+int lastid();
+void commitstatus(int, char **);
+int comparefiles(char *, char *);
+void alias(int, char **, int);
+int aliasfind(int, char **);
 
 typedef struct
 {
@@ -69,6 +76,10 @@ int main(int argc, char *argv[])
             {
                 config(1, argv[3], argv[4]);
             }
+            else if (!strncmp(argv[3], "alias.", 6))
+            {
+                alias(argc, argv, 1);
+            }
             else
             {
                 INVALID
@@ -83,6 +94,10 @@ int main(int argc, char *argv[])
             else if (!strcmp(argv[2], "user.email"))
             {
                 config(0, argv[2], argv[3]);
+            }
+            else if (!strncmp(argv[2], "alias.", 6))
+            {
+                alias(argc, argv, 0);
             }
             else
             {
@@ -302,8 +317,18 @@ int main(int argc, char *argv[])
         {
             branch(argc, argv);
         }
+        else if (!strcmp(argv[1], "status"))
+        {
+            status(argc, argv);
+            commitstatus(argc, argv);
+        }
         else
         {
+            int check = aliasfind(argc, argv);
+            if (check == 1)
+            {
+                return 0;
+            }
             INVALID
         }
     }
@@ -946,8 +971,8 @@ void commit(int argc, char **argv)
         // check global config
         char *user = malloc(PATH_MAX);
         char *email = malloc(PATH_MAX);
-        sprintf(user, "/home/aminkoohi/.magitconfig/user.txt");
-        sprintf(email, "/home/aminkoohi/.magitconfig/email.txt");
+        sprintf(user, "/home/.magitconfig/user.txt");
+        sprintf(email, "/home/.magitconfig/email.txt");
         user_file = fopen(user, "r");
         email_file = fopen(email, "r");
         if (user_file == NULL || email_file == NULL)
@@ -1591,9 +1616,93 @@ void checkout(int argc, char **argv)
 {
     if (!strcmp(argv[2], "HEAD"))
     {
+        // get current branch from branch.txt
+        // get last commit id from branch folder list.txt
+        // checkout files from that commit
+        char *branch_path = malloc(PATH_MAX);
+        char *cwd;
+        char *buffer = malloc(PATH_MAX);
+        cwd = getcwd(buffer, PATH_MAX);
+        char *repo = CheckInit(cwd);
+        sprintf(branch_path, "%s/.magit/commits/branch.txt", repo);
+        FILE *branch_file = fopen(branch_path, "r");
+        char *branch_name = malloc(PATH_MAX);
+        fgets(branch_name, PATH_MAX, branch_file);
+        fclose(branch_file);
+        sprintf(branch_path, "%s/.magit/branch/%s/list.txt", repo, branch_name);
+        FILE *list_file = fopen(branch_path, "r");
+        int ids[1000], i = 0;
+        char *line = malloc(PATH_MAX);
+        while (fgets(line, 1000, list_file) != NULL)
+        {
+            line[strcspn(line, "\n")] = '\0';
+            ids[i] = atoi(line);
+            i++;
+        }
+        if (i == 0)
+        {
+            char *checkout_commnad = malloc(PATH_MAX);
+            sprintf(checkout_commnad, "magit checkout %s", branch_name);
+            system(checkout_commnad);
+        }
+        else
+        {
+            char *checkout_command = malloc(PATH_MAX);
+            sprintf(checkout_command, "magit checkout %d", ids[i - 1]);
+            system(checkout_command);
+        }
     }
     else if (!strncmp(argv[2], "HEAD-", 5))
     {
+        // get current branch from branch.txt
+        // get last commit id from branch folder list.txt
+        // checkout files from that commit
+        char *branch_path = malloc(PATH_MAX);
+        char *cwd;
+        char *buffer = malloc(PATH_MAX);
+        cwd = getcwd(buffer, PATH_MAX);
+        char *repo = CheckInit(cwd);
+        sprintf(branch_path, "%s/.magit/commits/branch.txt", repo);
+        FILE *branch_file = fopen(branch_path, "r");
+        char *branch_name = malloc(PATH_MAX);
+        fgets(branch_name, PATH_MAX, branch_file);
+        fclose(branch_file);
+        sprintf(branch_path, "%s/.magit/branch/%s/list.txt", repo, branch_name);
+        FILE *list_file = fopen(branch_path, "r");
+        int ids[1000], i = 0;
+        char *line = malloc(PATH_MAX);
+        while (fgets(line, 1000, list_file) != NULL)
+        {
+            line[strcspn(line, "\n")] = '\0';
+            ids[i] = atoi(line);
+            i++;
+        }
+        int n;
+        sscanf(argv[2], "HEAD-%d", &n);
+        if (n > i)
+        {
+            puts("you cant go back that much");
+            return;
+        }
+        else if (n == i)
+        {
+            sprintf(branch_path, "%s/.magit/branch/%s/head.txt", repo, branch_name);
+            FILE *head_file = fopen(branch_path, "r");
+            char *head_id = malloc(PATH_MAX);
+            fgets(head_id, PATH_MAX, head_file);
+            char *head_branch = malloc(PATH_MAX);
+            fgets(head_branch, PATH_MAX, head_file);
+            fclose(head_file);
+            char *checkout_command = malloc(PATH_MAX);
+            sprintf(checkout_command, "magit checkout %s", head_branch);
+            system(checkout_command);
+        }
+        else
+        {
+            char *checkout_command = malloc(PATH_MAX);
+            sprintf(checkout_command, "magit checkout %d", ids[i - n - 1]);
+            system(checkout_command);
+        }
     }
     else
     {
@@ -1938,4 +2047,299 @@ void branch(int argc, char **argv)
         fclose(list_file);
         return;
     }
+}
+char *branchfinder(int id)
+{
+    char *cwd;
+    char buffer[PATH_MAX];
+    cwd = getcwd(buffer, PATH_MAX);
+    char *repo = CheckInit(cwd);
+    char *branch_path = malloc(PATH_MAX);
+    sprintf(branch_path, "%s/.magit/branch", repo);
+    DIR *dir = opendir(branch_path);
+    struct dirent *fp;
+    while ((fp = readdir(dir)) != NULL)
+    {
+        if (strcmp(fp->d_name, ".") == 0 || strcmp(fp->d_name, "..") == 0 || strcmp(fp->d_name, ".magit") == 0)
+        {
+            continue;
+        }
+        if (fp->d_type == DT_DIR)
+        {
+            sprintf(branch_path, "%s/.magit/branch/%s", repo, fp->d_name);
+            DIR *dir2 = opendir(branch_path);
+            struct dirent *fp2;
+            while ((fp2 = readdir(dir2)) != NULL)
+            {
+                if (strcmp(fp2->d_name, ".") == 0 || strcmp(fp2->d_name, "..") == 0 || strcmp(fp2->d_name, ".magit") == 0)
+                {
+                    continue;
+                }
+                if (fp2->d_type == DT_DIR)
+                {
+                    int id2 = atoi(fp2->d_name);
+                    if (id2 == id)
+                    {
+                        return fp->d_name;
+                    }
+                }
+            }
+        }
+    }
+}
+int lastid()
+{
+    char *cwd;
+    char buffer[PATH_MAX];
+    cwd = getcwd(buffer, PATH_MAX);
+    char *repo = CheckInit(cwd);
+    char *branch_path = malloc(PATH_MAX);
+    sprintf(branch_path, "%s/.magit/commits/last_id.txt", repo);
+    FILE *lastid_file = fopen(branch_path, "r");
+    char *lastid = malloc(PATH_MAX);
+    fgets(lastid, PATH_MAX, lastid_file);
+    return atoi(lastid);
+}
+int comparefiles(char *first, char *second)
+{
+    FILE *file1 = fopen(first, "rb");
+    FILE *file2 = fopen(second, "rb");
+    if (file1 == NULL || file2 == NULL)
+    {
+        if (file1)
+            fclose(file1);
+        if (file2)
+            fclose(file2);
+        return 0;
+    }
+    int ch1, ch2;
+    int result = 1;
+    while (1)
+    {
+        ch1 = fgetc(file1);
+        ch2 = fgetc(file2);
+        if (ch1 != ch2)
+        {
+            result = 0;
+            break;
+        }
+        if (ch1 == EOF || ch2 == EOF)
+        {
+            break;
+        }
+    }
+    if (ch1 != EOF || ch2 != EOF)
+    {
+        result = 0;
+    }
+    fclose(file1);
+    fclose(file2);
+    return result;
+}
+void status(int argc, char **argv)
+{
+    char *cwd;
+    char buffer[PATH_MAX];
+    cwd = getcwd(buffer, PATH_MAX);
+    char *repo = CheckInit(cwd);
+    DIR *dir = opendir(cwd);
+    struct dirent *fp;
+    while ((fp = readdir(dir)) != NULL)
+    {
+        if (strcmp(fp->d_name, ".magit") == 0 || strcmp(fp->d_name, ".") == 0 || strcmp(fp->d_name, "..") == 0)
+        {
+            continue;
+        }
+        if (fp->d_type == DT_DIR)
+        {
+            chdir(fp->d_name);
+            status(argc, argv);
+            chdir("..");
+        }
+        else if (fp->d_type == DT_REG)
+        {
+            char stats;
+            char *path = malloc(PATH_MAX);
+            sprintf(path, "%s/%s", cwd, fp->d_name);
+            int stage = CheckStage(path);
+            int last_id = lastid();
+            char *branch = branchfinder(last_id);
+            char *commit_path = malloc(PATH_MAX);
+            sprintf(commit_path, "%s/.magit/branch/%s/%d", repo, branch, last_id);
+            char *realpath = malloc(PATH_MAX);
+            strcpy(realpath, cwd);
+            realpath = realpath + strlen(repo);
+            char *file_path = malloc(PATH_MAX);
+            sprintf(file_path, "%s%s/%s", commit_path, realpath, fp->d_name);
+            FILE *file = fopen(file_path, "r");
+            if (file == NULL)
+            {
+                stats = 'A';
+            }
+            else
+            {
+                char *file1 = malloc(PATH_MAX);
+                char *file2 = malloc(PATH_MAX);
+                sprintf(file1, "%s/%s", cwd, fp->d_name);
+                sprintf(file2, "%s%s/%s", commit_path, realpath, fp->d_name);
+                if (comparefiles(file1, file2))
+                {
+                    stats = 'U';
+                }
+                else
+                {
+                    stats = 'M';
+                }
+            }
+            if (stage)
+            {
+                printf("%s +%c\n", fp->d_name, stats);
+            }
+            else
+            {
+                printf("%s -%c\n", fp->d_name, stats);
+            }
+        }
+    }
+}
+void commitstatus(int argc, char **argv)
+{
+    char *cwd;
+    char buffer[PATH_MAX];
+    cwd = getcwd(buffer, PATH_MAX);
+    char *repo = CheckInit(cwd);
+    char *commit_path = malloc(PATH_MAX);
+    int last_id = lastid();
+    char *branch = branchfinder(last_id);
+    char *realpath = malloc(PATH_MAX);
+    sprintf(commit_path, "%s/.magit/branch/%s/%d", repo, branch, last_id);
+    if (!strcmp(repo, cwd))
+    {
+        chdir(commit_path);
+    }
+    char *cwd2;
+    char buffer2[PATH_MAX];
+    cwd2 = getcwd(buffer2, PATH_MAX);
+    DIR *dir = opendir(cwd2);
+    struct dirent *fp;
+    while ((fp = readdir(dir)) != NULL)
+    {
+        if (strcmp(fp->d_name, ".") == 0 || strcmp(fp->d_name, "..") == 0 || strcmp(fp->d_name, ".magit") == 0)
+        {
+            continue;
+        }
+        if (fp->d_type == DT_DIR)
+        {
+            chdir(fp->d_name);
+            commitstatus(argc, argv);
+            chdir("..");
+        }
+        else if (fp->d_type == DT_REG)
+        {
+            char stats = 'U';
+            char *path = malloc(PATH_MAX);
+            sprintf(path, "%s/%s", cwd2, fp->d_name);
+            char *main_path = malloc(PATH_MAX);
+            char *file = malloc(PATH_MAX);
+            strcpy(file, cwd2);
+            file = file + strlen(commit_path);
+            sprintf(main_path, "%s%s/%s", repo, file, fp->d_name);
+            FILE *check = fopen(main_path, "r");
+            if (check == NULL)
+            {
+                stats = 'D';
+            }
+            int stage = CheckStage(main_path);
+            if (stage)
+            {
+                printf("%s +%c\n", fp->d_name, stats);
+            }
+            else
+            {
+                printf("%s -%c\n", fp->d_name, stats);
+            }
+        }
+    }
+    chdir(cwd);
+}
+void alias(int argc, char **argv, int mode)
+{
+    if (mode == 1)
+    {
+        char path[] = "/home/aminkoohi/.magitconfig";
+        DIR *dir = opendir(path);
+        if (dir == NULL)
+        {
+            mkdir(path, 0777);
+            char *alias = malloc(PATH_MAX);
+            sscanf(argv[3], "alias.%s", alias);
+            char *name = malloc(PATH_MAX);
+            sprintf(name, "%s.txt", alias);
+            FILE *aliastxt = fopen(name, "w");
+            fprintf(aliastxt, "%s", argv[4]);
+        }
+        else
+        {
+            char *alias = malloc(PATH_MAX);
+            sscanf(argv[3], "alias.%s", alias);
+            char *name = malloc(PATH_MAX);
+            sprintf(name, "%s.txt", alias);
+            FILE *aliastxt = fopen(name, "w");
+            fprintf(aliastxt, "%s", argv[4]);
+        }
+    }
+    else
+    {
+        char cwd[PATH_MAX];
+        getcwd(cwd, PATH_MAX);
+        char *repo = CheckInit(cwd);
+        if (repo == NULL)
+        {
+            puts("you are not in a magit repository");
+            return;
+        }
+        char *alias = malloc(PATH_MAX);
+        sscanf(argv[2], "alias.%s", alias);
+        char *alias_path = malloc(PATH_MAX);
+        sprintf(alias_path, "%s/.magit/%s.txt", repo, alias);
+        FILE *alias_file = fopen(alias_path, "w");
+        fprintf(alias_file, "%s", argv[3]);
+    }
+}
+int aliasfind(int argc, char **argv)
+{
+    char cwd[PATH_MAX];
+    getcwd(cwd, PATH_MAX);
+    char *repo = CheckInit(cwd);
+    char *alias_path = malloc(PATH_MAX);
+    sprintf(alias_path, "%s/.magit/%s.txt", repo, argv[1]);
+    FILE *alias_file = fopen(alias_path, "r");
+    if (alias_file == NULL)
+    {
+        char path[] = "/home/aminkoohi/.magitconfig";
+        chdir("/");
+        chdir(path);
+        char *name = malloc(PATH_MAX);
+        sprintf(name, "%s.txt", argv[1]);
+        alias_file = fopen(name, "r");
+        if (alias_file == NULL)
+        {
+            puts("alias not found");
+            chdir(cwd);
+            return 0;
+        }
+        char *alias_txt = malloc(PATH_MAX);
+        fgets(alias_txt, PATH_MAX, alias_file);
+        char *system_command = malloc(PATH_MAX);
+        chdir(cwd);
+        sprintf(system_command, "magit %s", alias_txt);
+        system(system_command);
+        return 1;
+    }
+    char *alias_txt = malloc(PATH_MAX);
+    fgets(alias_txt, PATH_MAX, alias_file);
+    char *system_command = malloc(PATH_MAX);
+    sprintf(system_command, "magit %s", alias_txt);
+    system(system_command);
+    return 1;
 }
