@@ -44,6 +44,10 @@ void commitstatus(int, char **);
 int comparefiles(char *, char *);
 void alias(int, char **, int);
 int aliasfind(int, char **);
+void set(int, char **);
+void replace(int, char **);
+void del(int, char **);
+char *shortcutfinder(char *);
 
 typedef struct
 {
@@ -287,7 +291,20 @@ int main(int argc, char *argv[])
         }
         else if (!strcmp(argv[1], "commit"))
         {
-            if (!strcmp(argv[2], "-m"))
+            if (!strcmp(argv[2], "-s"))
+            {
+                char *message = malloc(PATH_MAX);
+                message = shortcutfinder(argv[3]);
+                if (message == NULL)
+                {
+                    puts("shortcut doesn't exist!");
+                    return 0;
+                }
+                char *commit_command = malloc(PATH_MAX);
+                sprintf(commit_command, "magit commit -m \"%s\"", message);
+                system(commit_command);
+            }
+            else if (!strcmp(argv[2], "-m"))
             {
                 if (argc <= 3)
                 {
@@ -304,6 +321,30 @@ int main(int argc, char *argv[])
             {
                 INVALID
             }
+        }
+        else if (!strcmp(argv[1], "set"))
+        {
+            if (argc != 6 || strcmp(argv[2], "-m") || strcmp(argv[4], "-s"))
+            {
+                INVALID
+            }
+            set(argc, argv);
+        }
+        else if (!strcmp(argv[1], "replace"))
+        {
+            if (argc != 6 || strcmp(argv[2], "-m") || strcmp(argv[4], "-s"))
+            {
+                INVALID
+            }
+            replace(argc, argv);
+        }
+        else if (!strcmp(argv[1], "remove"))
+        {
+            if (argc != 4 || strcmp(argv[2], "-s"))
+            {
+                INVALID
+            }
+            del(argc, argv);
         }
         else if (!strcmp(argv[1], "log"))
         {
@@ -325,11 +366,10 @@ int main(int argc, char *argv[])
         else
         {
             int check = aliasfind(argc, argv);
-            if (check == 1)
+            if (check == 0)
             {
-                return 0;
+                INVALID;
             }
-            INVALID
         }
     }
     return 0;
@@ -622,6 +662,7 @@ void init()
     mkdir(".magit/branch/master", 0777);
     mkdir(".magit/commits", 0777);
     mkdir(".magit/stage", 0777);
+    mkdir(".magit/shortcuts", 0777);
     fopen(".magit/status.txt", "w");
     fopen(".magit/reset.txt", "w");
     fopen(".magit/add.txt", "w");
@@ -960,27 +1001,28 @@ void commit(int argc, char **argv)
     char buffer[PATH_MAX];
     cwd = getcwd(buffer, PATH_MAX);
     char *repo = CheckInit(cwd);
-    char *user = malloc(PATH_MAX);
-    char *email = malloc(PATH_MAX);
-    sprintf(user, "%s/.magit/user.txt", repo);
-    sprintf(email, "%s/.magit/email.txt", repo);
+    chdir(repo);
+    chdir(".magit");
+    char user[] = "user.txt";
+    char email[] = "email.txt";
     FILE *user_file = fopen(user, "r");
     FILE *email_file = fopen(email, "r");
     if (user_file == NULL || email_file == NULL)
     {
+        deb;
         // check global config
-        char *user = malloc(PATH_MAX);
-        char *email = malloc(PATH_MAX);
-        sprintf(user, "/home/.magitconfig/user.txt");
-        sprintf(email, "/home/.magitconfig/email.txt");
+        chdir("/");
+        chdir("/home/aminkoohi/.magitconfig");
         user_file = fopen(user, "r");
         email_file = fopen(email, "r");
+        chdir(cwd);
         if (user_file == NULL || email_file == NULL)
         {
             puts("you must set user name and email before committing");
             return;
         }
     }
+    chdir(cwd);
     char *user_name = malloc(PATH_MAX);
     char *user_email = malloc(PATH_MAX);
     fgets(user_name, PATH_MAX, user_file);
@@ -1208,6 +1250,89 @@ void commit(int argc, char **argv)
     system("rm add.txt && touch add.txt");
     system("rm reset.txt && touch reset.txt");
     return;
+}
+void set(int argc, char **argv)
+{
+    char *cwd = malloc(PATH_MAX);
+    cwd = getcwd(cwd, PATH_MAX);
+    char *repo = CheckInit(cwd);
+    char *folder = malloc(PATH_MAX);
+    sprintf(folder, "%s/.magit/shortcuts", repo);
+    char *file_name = malloc(PATH_MAX);
+    strcpy(file_name, argv[5]);
+    char *file_path = malloc(PATH_MAX);
+    sprintf(file_path, "%s/%s", folder, file_name);
+    FILE *file = fopen(file_path, "w");
+    fprintf(file, "%s", argv[3]);
+    fclose(file);
+    return;
+}
+void replace(int argc, char **argv)
+{
+    char *cwd = malloc(PATH_MAX);
+    cwd = getcwd(cwd, PATH_MAX);
+    char *repo = CheckInit(cwd);
+    char *folder = malloc(PATH_MAX);
+    sprintf(folder, "%s/.magit/shortcuts", repo);
+    char *file_name = malloc(PATH_MAX);
+    strcpy(file_name, argv[5]);
+    char *file_path = malloc(PATH_MAX);
+    sprintf(file_path, "%s/%s", folder, file_name);
+    FILE *file = fopen(file_path, "r");
+    if (file == NULL)
+    {
+        puts("You can't replace a shortcut that doesn't exist!");
+        return;
+    }
+    file = fopen(file_path, "w");
+    fprintf(file, "%s", argv[3]);
+    fclose(file);
+    return;
+}
+void del(int argc, char **argv)
+{
+    char *cwd = malloc(PATH_MAX);
+    cwd = getcwd(cwd, PATH_MAX);
+    char *repo = CheckInit(cwd);
+    char *folder = malloc(PATH_MAX);
+    sprintf(folder, "%s/.magit/shortcuts", repo);
+    char *file_name = malloc(PATH_MAX);
+    strcpy(file_name, argv[3]);
+    char *file_path = malloc(PATH_MAX);
+    sprintf(file_path, "%s/%s", folder, file_name);
+    FILE *file = fopen(file_path, "r");
+    if (file == NULL)
+    {
+        puts("You can't delete a shortcut that doesn't exist!");
+        return;
+    }
+    fclose(file);
+    char *rm_command = malloc(PATH_MAX);
+    sprintf(rm_command, "rm %s", file_path);
+    system(rm_command);
+    return;
+}
+char *shortcutfinder(char *name)
+{
+    char *cwd = malloc(PATH_MAX);
+    cwd = getcwd(cwd, PATH_MAX);
+    char *repo = CheckInit(cwd);
+    char *folder = malloc(PATH_MAX);
+    sprintf(folder, "%s/.magit/shortcuts", repo);
+    char *file_name = malloc(PATH_MAX);
+    strcpy(file_name, name);
+    char *file_path = malloc(PATH_MAX);
+    sprintf(file_path, "%s/%s", folder, file_name);
+    FILE *file = fopen(file_path, "r");
+    if (file == NULL)
+    {
+        puts("this shortcut doesn't exist!");
+        return NULL;
+    }
+    char *line = malloc(PATH_MAX);
+    fgets(line, PATH_MAX, file);
+    fclose(file);
+    return line;
 }
 void logg(int argc, char **argv)
 {
@@ -2264,6 +2389,8 @@ void commitstatus(int argc, char **argv)
 }
 void alias(int argc, char **argv, int mode)
 {
+    char *cwd = malloc(PATH_MAX);
+    cwd = getcwd(cwd, PATH_MAX);
     if (mode == 1)
     {
         char path[] = "/home/aminkoohi/.magitconfig";
@@ -2275,8 +2402,11 @@ void alias(int argc, char **argv, int mode)
             sscanf(argv[3], "alias.%s", alias);
             char *name = malloc(PATH_MAX);
             sprintf(name, "%s.txt", alias);
+            chdir("/");
+            chdir(path);
             FILE *aliastxt = fopen(name, "w");
             fprintf(aliastxt, "%s", argv[4]);
+            chdir(cwd);
         }
         else
         {
@@ -2284,8 +2414,11 @@ void alias(int argc, char **argv, int mode)
             sscanf(argv[3], "alias.%s", alias);
             char *name = malloc(PATH_MAX);
             sprintf(name, "%s.txt", alias);
+            chdir("/");
+            chdir(path);
             FILE *aliastxt = fopen(name, "w");
             fprintf(aliastxt, "%s", argv[4]);
+            chdir(cwd);
         }
     }
     else
@@ -2324,7 +2457,6 @@ int aliasfind(int argc, char **argv)
         alias_file = fopen(name, "r");
         if (alias_file == NULL)
         {
-            puts("alias not found");
             chdir(cwd);
             return 0;
         }
