@@ -49,6 +49,8 @@ void replace(int, char **);
 void del(int, char **);
 char *shortcutfinder(char *);
 void revert(int, char **);
+void tag(int, char **);
+void diff(int, char **);
 
 typedef struct
 {
@@ -368,6 +370,14 @@ int main(int argc, char *argv[])
         {
             revert(argc, argv);
         }
+        else if (!strcmp(argv[1], "tag"))
+        {
+            tag(argc, argv);
+        }
+        else if (!strcmp(argv[1], "diff"))
+        {
+            diff(argc, argv);
+        }
         else
         {
             int check = aliasfind(argc, argv);
@@ -668,6 +678,7 @@ void init()
     mkdir(".magit/commits", 0777);
     mkdir(".magit/stage", 0777);
     mkdir(".magit/shortcuts", 0777);
+    mkdir(".magit/tags", 0777);
     fopen(".magit/status.txt", "w");
     fopen(".magit/reset.txt", "w");
     fopen(".magit/add.txt", "w");
@@ -1020,7 +1031,6 @@ void commit(int argc, char **argv)
     {
         mode = 0;
     }
-    printf("%d\n", mode);
     FILE *user_file = fopen(user, "r");
     FILE *email_file = fopen(email, "r");
     if (user_file == NULL || email_file == NULL)
@@ -2683,4 +2693,338 @@ void revert(int argc, char **argv)
     sprintf(rm_command, "rm %s/.magit/commits/mode.txt", repo);
     system(rm_command);
     return;
+}
+void tag(int argc, char **argv)
+{
+    if (argc > 2 && !strcmp(argv[2], "-a"))
+    {
+        char *tag = malloc(PATH_MAX);
+        strcpy(tag, argv[3]);
+        char *message = malloc(PATH_MAX);
+        for (int i = 0; i < argc; i++)
+        {
+            if (!strcmp(argv[i], "-m") && i + 1 < argc)
+            {
+                strcpy(message, argv[i + 1]);
+                break;
+            }
+        }
+        int overwrite = 0;
+        for (int i = 0; i < argc; i++)
+        {
+            if (!strcmp(argv[i], "-f"))
+            {
+                overwrite = 1;
+                break;
+            }
+        }
+        int id = -1;
+        for (int i = 0; i < argc; i++)
+        {
+            if (!strcmp(argv[i], "-c") && i + 1 < argc)
+            {
+                id = atoi(argv[i + 1]);
+                break;
+            }
+        }
+        char *cwd = malloc(PATH_MAX);
+        cwd = getcwd(cwd, PATH_MAX);
+        char *repo = CheckInit(cwd);
+        chdir(repo);
+        chdir(".magit");
+        char user[] = "user.txt";
+        char email[] = "email.txt";
+        FILE *user_file = fopen(user, "r");
+        FILE *email_file = fopen(email, "r");
+        if (user_file == NULL || email_file == NULL)
+        {
+            // check global config
+            chdir("/");
+            chdir("/home/aminkoohi/.magitconfig");
+            user_file = fopen(user, "r");
+            email_file = fopen(email, "r");
+            chdir(cwd);
+            if (user_file == NULL || email_file == NULL)
+            {
+                puts("you must set user name and email before committing");
+                return;
+            }
+        }
+        chdir(cwd);
+        char *user_name = malloc(PATH_MAX);
+        char *user_email = malloc(PATH_MAX);
+        fgets(user_name, PATH_MAX, user_file);
+        fgets(user_email, PATH_MAX, email_file);
+        user_name[strlen(user_name)] = '\0';
+        user_email[strlen(user_email)] = '\0';
+        fclose(user_file);
+        fclose(email_file);
+        char *tag_path = malloc(PATH_MAX);
+        sprintf(tag_path, "%s/.magit/tags/%s", repo, tag);
+        DIR *tag_dir = opendir(tag_path);
+        if (tag_dir == NULL)
+        {
+            mkdir(tag_path, 0777);
+            chdir(tag_path);
+            if (message != NULL)
+            {
+                char *message_path = malloc(PATH_MAX);
+                sprintf(message_path, "%s/.magit/tags/%s/message.txt", repo, tag);
+                FILE *message_file = fopen(message_path, "w");
+                fprintf(message_file, "%s", message);
+                fclose(message_file);
+            }
+            if (id != -1)
+            {
+                char *id_path = malloc(PATH_MAX);
+                sprintf(id_path, "%s/.magit/tags/%s/id.txt", repo, tag);
+                FILE *id_file = fopen(id_path, "w");
+                fprintf(id_file, "%d", id);
+                fclose(id_file);
+            }
+            else
+            {
+                char *id_path = malloc(PATH_MAX);
+                sprintf(id_path, "%s/.magit/commits/previd.txt", repo);
+                FILE *id_file = fopen(id_path, "r");
+                char *id = malloc(PATH_MAX);
+                fgets(id, PATH_MAX, id_file);
+                sprintf(id_path, "%s/.magit/tags/%s/id.txt", repo, tag);
+                id_file = fopen(id_path, "w");
+                fprintf(id_file, "%s", id);
+                fclose(id_file);
+            }
+            FILE *author_file = fopen("author.txt", "w");
+            fprintf(author_file, "%s <%s>", user_name, user_email);
+            time_t t = time(NULL);
+            struct tm tm = *localtime(&t);
+            FILE *time_file = fopen("time.txt", "w");
+            fprintf(time_file, "%d/%d/%d %d:%d:%d", tm.tm_year + 1900, tm.tm_mon + 1, tm.tm_mday, tm.tm_hour, tm.tm_min, tm.tm_sec);
+            printf("tag %s created\n", tag);
+        }
+        else
+        {
+            if (overwrite)
+            {
+                mkdir(tag_path, 0777);
+                chdir(tag_path);
+                if (message != NULL)
+                {
+                    char *message_path = malloc(PATH_MAX);
+                    sprintf(message_path, "%s/.magit/tags/%s/message.txt", repo, tag);
+                    FILE *message_file = fopen(message_path, "w");
+                    fprintf(message_file, "%s", message);
+                    fclose(message_file);
+                }
+                if (id != -1)
+                {
+                    char *id_path = malloc(PATH_MAX);
+                    sprintf(id_path, "%s/.magit/tags/%s/id.txt", repo, tag);
+                    FILE *id_file = fopen(id_path, "w");
+                    fprintf(id_file, "%d", id);
+                    fclose(id_file);
+                }
+                else
+                {
+                    char *id_path = malloc(PATH_MAX);
+                    sprintf(id_path, "%s/.magit/commits/previd.txt", repo);
+                    FILE *id_file = fopen(id_path, "r");
+                    char *id = malloc(PATH_MAX);
+                    fgets(id, PATH_MAX, id_file);
+                    sprintf(id_path, "%s/.magit/tags/%s/id.txt", repo, tag);
+                    id_file = fopen(id_path, "w");
+                    fprintf(id_file, "%s", id);
+                    fclose(id_file);
+                }
+                FILE *author_file = fopen("author.txt", "w");
+                fprintf(author_file, "%s <%s>", user_name, user_email);
+                time_t t = time(NULL);
+                struct tm tm = *localtime(&t);
+                FILE *time_file = fopen("time.txt", "w");
+                fprintf(time_file, "%d/%d/%d %d:%d:%d", tm.tm_year + 1900, tm.tm_mon + 1, tm.tm_mday, tm.tm_hour, tm.tm_min, tm.tm_sec);
+                printf("tag %s created\n", tag);
+            }
+            else
+            {
+                puts("tag already exists");
+                return;
+            }
+        }
+    }
+    else if (argc == 2)
+    {
+        char *cwd = malloc(PATH_MAX);
+        cwd = getcwd(cwd, PATH_MAX);
+        char *repo = CheckInit(cwd);
+        char *tag_path = malloc(PATH_MAX);
+        sprintf(tag_path, "%s/.magit/tags", repo);
+        DIR *dir = opendir(tag_path);
+        struct dirent *fp;
+        while ((fp = readdir(dir)) != NULL)
+        {
+            if (strcmp(fp->d_name, ".") == 0 || strcmp(fp->d_name, "..") == 0)
+            {
+                continue;
+            }
+            if (fp->d_type == DT_DIR)
+            {
+                printf("%s\n", fp->d_name);
+            }
+        }
+    }
+    else if (!strcmp(argv[2], "show"))
+    {
+        char *cwd = malloc(PATH_MAX);
+        cwd = getcwd(cwd, PATH_MAX);
+        char *repo = CheckInit(cwd);
+        char *tag_path = malloc(PATH_MAX);
+        sprintf(tag_path, "%s/.magit/tags/%s", repo, argv[3]);
+        DIR *tag_dir = opendir(tag_path);
+        if (tag_dir == NULL)
+        {
+            puts("tag not found");
+            return;
+        }
+        else
+        {
+            chdir(tag_path);
+            // print tag name ,id,author,date,message
+            char *message_path = malloc(PATH_MAX);
+            sprintf(message_path, "%s/.magit/tags/%s/message.txt", repo, argv[3]);
+            FILE *message_file = fopen(message_path, "r");
+            char *message = malloc(PATH_MAX);
+            if (message_file == NULL)
+            {
+                message = "\0";
+            }
+            else
+            {
+                fgets(message, PATH_MAX, message_file);
+            }
+            char *id_path = malloc(PATH_MAX);
+            sprintf(id_path, "%s/.magit/tags/%s/id.txt", repo, argv[3]);
+            FILE *id_file = fopen(id_path, "r");
+            char *id = malloc(PATH_MAX);
+            fgets(id, PATH_MAX, id_file);
+            char *author_path = malloc(PATH_MAX);
+            sprintf(author_path, "%s/.magit/tags/%s/author.txt", repo, argv[3]);
+            FILE *author_file = fopen(author_path, "r");
+            char *author = malloc(PATH_MAX);
+            fgets(author, PATH_MAX, author_file);
+            char *time_path = malloc(PATH_MAX);
+            sprintf(time_path, "%s/.magit/tags/%s/time.txt", repo, argv[3]);
+            FILE *time_file = fopen(time_path, "r");
+            char *time = malloc(PATH_MAX);
+            fgets(time, PATH_MAX, time_file);
+            printf("tag: %s\n", argv[3]);
+            printf("commit %s\n", id);
+            printf("author: %s\n", author);
+            printf("date: %s\n", time);
+            printf("message: %s\n", message);
+        }
+    }
+}
+void diff(int argc, char **argv)
+{
+    if (!strcmp(argv[2], "-f"))
+    {
+        int begin1 = 1, end1 = -1, begin2 = 1, end2 = -1;
+        for (int i = 0; i < argc; i++)
+        {
+            if (!strcmp(argv[i], "line1"))
+            {
+                sscanf(argv[i + 1], "%d-%d", &begin1, &end1);
+            }
+            if (!strcmp(argv[i], "line2"))
+            {
+                sscanf(argv[i + 1], "%d-%d", &begin2, &end2);
+            }
+        }
+        if (end1 == -1)
+            end1 = 999999;
+        if (end2 == -1)
+            end2 = 999999;
+        char *cwd = malloc(PATH_MAX);
+        cwd = getcwd(cwd, PATH_MAX);
+        char *repo = CheckInit(cwd);
+        char *file1 = malloc(PATH_MAX);
+        sprintf(file1, "%s/%s", repo, argv[3]);
+        char *file2 = malloc(PATH_MAX);
+        sprintf(file2, "%s/%s", repo, argv[4]);
+        FILE *file1_file = fopen(file1, "r");
+        FILE *file2_file = fopen(file2, "r");
+        char *line1 = malloc(PATH_MAX);
+        char *line2 = malloc(PATH_MAX);
+        int line1_counter = 1;
+        int line2_counter = 1;
+        while (line1_counter < begin1)
+        {
+            fgets(line1, PATH_MAX, file1_file);
+            line1_counter++;
+        }
+        while (line2_counter < begin2)
+        {
+            fgets(line2, PATH_MAX, file2_file);
+            line2_counter++;
+        }
+        while (fgets(line1, PATH_MAX, file1_file) != NULL && fgets(line2, PATH_MAX, file2_file) != NULL)
+        {
+            if (line1_counter > end1 || line2_counter > end2)
+            {
+                break;
+            }
+            while (line1[0] == '\n')
+            {
+                if (fgets(line1, PATH_MAX, file1_file) == NULL)
+                {
+                    break;
+                }
+            }
+            while (line2[0] == '\n')
+            {
+                if (fgets(line2, PATH_MAX, file2_file) == NULL)
+                {
+                    break;
+                }
+            }
+            if (line1_counter > end1 || line2_counter > end2)
+            {
+                break;
+            }
+            char *tmp1 = malloc(PATH_MAX);
+            char *tmp2 = malloc(PATH_MAX);
+            int cnt = 0;
+            for (int i = 0; i < strlen(line1); i++)
+            {
+                if (line1[i] == ' ' || line1[i] == '\n' || line1[i] == '\t')
+                {
+                    continue;
+                }
+                tmp1[cnt] = line1[i];
+                cnt++;
+            }
+            tmp1[cnt] = '\0';
+            cnt = 0;
+            for (int i = 0; i < strlen(line2); i++)
+            {
+                if (line2[i] == ' ' || line2[i] == '\n' || line2[i] == '\t')
+                {
+                    continue;
+                }
+                tmp2[cnt] = line2[i];
+                cnt++;
+            }
+            tmp2[cnt] = '\0';
+            if (strcmp(tmp1, tmp2))
+            {
+                printf("<<<<<<<<<<\n");
+                printf("%s- %d\n%s", argv[3], line1_counter, line1);
+                printf("%s- %d\n%s", argv[4], line2_counter, line2);
+                printf(">>>>>>>>>>\n");
+            }
+        }
+    }
+    else if (!strcmp(argv[1], "-c"))
+    {
+    }
 }
