@@ -7,6 +7,9 @@
 #include <sys/types.h>
 #include <sys/stat.h>
 
+const char *red = "\033[31m";
+const char *green = "\033[32m";
+const char *stop = "\033[0m";
 #define INVALID              \
     puts("Invalid command"); \
     return 0;
@@ -50,8 +53,12 @@ void del(int, char **);
 char *shortcutfinder(char *);
 void revert(int, char **);
 void tag(int, char **);
-void diff(int, char **);
-
+int diff(int, char **);
+int diffinder(int, int, int);
+void merge(int, char **);
+void mergecopy(int, int);
+void grep(int, char **);
+void grepfinder(char *, char *, int);
 typedef struct
 {
     int id;
@@ -378,6 +385,14 @@ int main(int argc, char *argv[])
         {
             diff(argc, argv);
         }
+        else if (!strcmp(argv[1], "merge"))
+        {
+            merge(argc, argv);
+        }
+        else if (!strcmp(argv[1], "grep"))
+        {
+            grep(argc, argv);
+        }
         else
         {
             int check = aliasfind(argc, argv);
@@ -389,7 +404,6 @@ int main(int argc, char *argv[])
     }
     return 0;
 }
-
 void clean()
 {
     // clear repo except .magit
@@ -2924,8 +2938,9 @@ void tag(int argc, char **argv)
         }
     }
 }
-void diff(int argc, char **argv)
+int diff(int argc, char **argv)
 {
+    int flag = 0;
     if (!strcmp(argv[2], "-f"))
     {
         int begin1 = 1, end1 = -1, begin2 = 1, end2 = -1;
@@ -2975,6 +2990,7 @@ void diff(int argc, char **argv)
             }
             while (line1[0] == '\n')
             {
+                line1_counter++;
                 if (fgets(line1, PATH_MAX, file1_file) == NULL)
                 {
                     break;
@@ -2982,6 +2998,7 @@ void diff(int argc, char **argv)
             }
             while (line2[0] == '\n')
             {
+                line2_counter++;
                 if (fgets(line2, PATH_MAX, file2_file) == NULL)
                 {
                     break;
@@ -3017,14 +3034,366 @@ void diff(int argc, char **argv)
             tmp2[cnt] = '\0';
             if (strcmp(tmp1, tmp2))
             {
+                deb;
+                flag = 1;
+                line1[strlen(line1) - 1] = '\0';
+                line2[strlen(line2) - 1] = '\0';
+                char *name1 = malloc(PATH_MAX);
+                char *name2 = malloc(PATH_MAX);
+                if (strrchr(argv[3], '/'))
+                {
+                    name1 = strrchr(argv[3], '/') + 1;
+                }
+                if (strrchr(argv[4], '/'))
+                {
+                    name2 = strrchr(argv[4], '/') + 1;
+                }
                 printf("<<<<<<<<<<\n");
-                printf("%s- %d\n%s", argv[3], line1_counter, line1);
-                printf("%s- %d\n%s", argv[4], line2_counter, line2);
+                printf("%s%s- %d\n%s%s\n", red, name1, line1_counter, line1, stop);
+                printf("%s%s- %d\n%s%s\n", green, name2, line2_counter, line2, stop);
                 printf(">>>>>>>>>>\n");
             }
         }
+        return flag;
     }
-    else if (!strcmp(argv[1], "-c"))
+    else if (!strcmp(argv[2], "-c"))
     {
+        int id1, id2;
+        sscanf(argv[3], "%d", &id1);
+        sscanf(argv[4], "%d", &id2);
+        // cd to id1 path
+        char *branch1 = branchfinder(id1);
+        char *branch2 = branchfinder(id2);
+        char *cwd = malloc(PATH_MAX);
+        cwd = getcwd(cwd, PATH_MAX);
+        char *repo = CheckInit(cwd);
+        char *commit_path1 = malloc(PATH_MAX);
+        sprintf(commit_path1, "%s/.magit/branch/%s/%d", repo, branch1, id1);
+        char *commit_path2 = malloc(PATH_MAX);
+        sprintf(commit_path2, "%s/.magit/branch/%s/%d", repo, branch2, id2);
+        chdir("/");
+        chdir(commit_path1);
+        flag = diffinder(id1, id2, 1);
+        chdir("/");
+        chdir(commit_path2);
+        diffinder(id2, id1, 0);
+        chdir(cwd);
+    }
+    return flag;
+}
+int diffinder(int id1, int id2, int mode)
+{
+    int flag = 0, ans = 1;
+    char *branch1 = branchfinder(id1);
+    char *branch2 = branchfinder(id2);
+    char *cwd = malloc(PATH_MAX);
+    cwd = getcwd(cwd, PATH_MAX);
+    char *repo = CheckInit(cwd);
+    char *commit_path1 = malloc(PATH_MAX);
+    sprintf(commit_path1, "%s/.magit/branch/%s/%d", repo, branch1, id1);
+    char *commit_path2 = malloc(PATH_MAX);
+    sprintf(commit_path2, "%s/.magit/branch/%s/%d", repo, branch2, id2);
+    char *tmp = malloc(PATH_MAX);
+    strcpy(tmp, cwd);
+    tmp += strlen(commit_path1);
+    char *cur_path = malloc(PATH_MAX);
+    sprintf(cur_path, "%s%s", commit_path2, tmp);
+    DIR *dir = opendir(cwd);
+    struct dirent *fp;
+    while ((fp = readdir(dir)) != NULL)
+    {
+        if (strcmp(fp->d_name, ".") == 0 || strcmp(fp->d_name, "..") == 0 || strcmp(fp->d_name, ".magit") == 0)
+        {
+            continue;
+        }
+        if (fp->d_type == DT_DIR)
+        {
+            chdir(fp->d_name);
+            diffinder(id1, id2, mode);
+            chdir("..");
+        }
+        else if (fp->d_type == DT_REG)
+        {
+            char *path = malloc(PATH_MAX);
+            sprintf(path, "%s%s/%s", commit_path2, tmp, fp->d_name);
+            chdir("/");
+            FILE *file = fopen(path, "r");
+            if (file == NULL && mode != 2)
+            {
+                printf("%s exists in %d but not in %d\n", fp->d_name, id1, id2);
+                chdir(cwd);
+                continue;
+            }
+            else
+            {
+                chdir(cwd);
+                char *diff_command = malloc(PATH_MAX);
+                char *file1 = malloc(PATH_MAX);
+                char *file2 = malloc(PATH_MAX);
+                sprintf(file1, "%s%s/%s", commit_path1, tmp, fp->d_name);
+                file1 += strlen(repo);
+                sprintf(file2, "%s%s/%s", commit_path2, tmp, fp->d_name);
+                file2 += strlen(repo);
+                if (mode != 0 && file != NULL)
+                {
+                    char **diff_args;
+                    diff_args = malloc(5 * sizeof(char *));
+                    for (int i = 0; i < 5; i++)
+                    {
+                        diff_args[i] = malloc(PATH_MAX);
+                    }
+                    strcpy(diff_args[0], "magit");
+                    strcpy(diff_args[1], "diff");
+                    strcpy(diff_args[2], "-f");
+                    strcpy(diff_args[3], file1);
+                    strcpy(diff_args[4], file2);
+                    flag = diff(5, diff_args);
+                    if (flag)
+                    {
+                        ans = 0;
+                    }
+                }
+                else
+                {
+                    continue;
+                }
+            }
+        }
+    }
+    return ans;
+}
+void merge(int argc, char **argv)
+{
+    if (!strcmp(argv[2], "-b"))
+    {
+        char *branch1 = malloc(PATH_MAX);
+        strcpy(branch1, argv[3]);
+        char *branch2 = malloc(PATH_MAX);
+        strcpy(branch2, argv[4]);
+        // get the last commit id of branch1 from list.txt
+        char *cwd = malloc(PATH_MAX);
+        cwd = getcwd(cwd, PATH_MAX);
+        char *repo = CheckInit(cwd);
+        char *branch_path = malloc(PATH_MAX);
+        sprintf(branch_path, "%s/.magit/branch/%s/list.txt", repo, branch1);
+        FILE *branch_file = fopen(branch_path, "r");
+        if (branch_file == NULL)
+        {
+            printf("%s branch doesn't exist\n", branch1);
+            return;
+        }
+        char *line = malloc(PATH_MAX);
+        int id = -1;
+        while (fgets(line, PATH_MAX, branch_file) != NULL)
+        {
+            id = atoi(line);
+        }
+        if (id == -1)
+        {
+            printf("%s branch is empty", branch1);
+            return;
+        }
+        // get the last commit id of branch2 from list.txt
+        char *branch_path2 = malloc(PATH_MAX);
+        sprintf(branch_path2, "%s/.magit/branch/%s/list.txt", repo, branch2);
+        FILE *branch_file2 = fopen(branch_path2, "r");
+        if (branch_file2 == NULL)
+        {
+            printf("%s branch doesn't exist\n", branch2);
+            return;
+        }
+        int id2 = -1;
+        while (fgets(line, PATH_MAX, branch_file2) != NULL)
+        {
+            id2 = atoi(line);
+        }
+        if (id2 == -1)
+        {
+            printf("%s branch is empty", branch2);
+            return;
+        }
+        if (id == id2)
+        {
+            printf("%s and %s are the same\n", branch1, branch2);
+            return;
+        }
+        printf("merging %s and %s\n", branch1, branch2);
+        char *commit_path1 = malloc(PATH_MAX);
+        sprintf(commit_path1, "%s/.magit/branch/%s/%d", repo, branch1, id);
+        chdir("/");
+        chdir(commit_path1);
+        int flag = diffinder(id, id2, 2);
+        chdir("/");
+        chdir(cwd);
+        if (!flag)
+        {
+            printf("%sMERGE CONFLICT%s\n", red, stop);
+            return;
+        }
+        else
+        {
+            // create a new branch with the name of branch1-branch2 and a new empty commit inside it with last id
+            char *new_branch = malloc(PATH_MAX);
+            sprintf(new_branch, "%s-%s", branch1, branch2);
+            char *new_branch_path = malloc(PATH_MAX);
+            sprintf(new_branch_path, ".magit/branch/%s", new_branch);
+            mkdir(new_branch_path, 0777);
+            char *list_path = malloc(PATH_MAX);
+            sprintf(list_path, ".magit/branch/%s/list.txt", new_branch);
+            FILE *list_file = fopen(list_path, "w");
+            char *head_path = malloc(PATH_MAX);
+            sprintf(head_path, ".magit/branch/%s/head.txt", new_branch);
+            FILE *head_file = fopen(head_path, "w");
+            fprintf(head_file, "%d", id);
+            fclose(head_file);
+            char *commit_path = malloc(PATH_MAX);
+            int last_id = lastid() + 1;
+            sprintf(commit_path, ".magit/branch/%s/%d", new_branch, last_id);
+            mkdir(commit_path, 0777);
+            fprintf(list_file, "%d", last_id);
+            chdir("/");
+            chdir(commit_path1);
+            mergecopy(id, last_id);
+            chdir("/");
+            char *commit_path2 = malloc(PATH_MAX);
+            sprintf(commit_path2, "%s/.magit/branch/%s/%d", repo, branch2, id2);
+            chdir(commit_path2);
+            mergecopy(id2, last_id);
+            chdir("/");
+            chdir(cwd);
+            char *log_path = malloc(PATH_MAX);
+            sprintf(log_path, ".magit/commits/log.txt");
+            FILE *log_file = fopen(log_path, "a");
+            fprintf(log_file, "%d\n", last_id);
+            fprintf(log_file, "merge %s and %s\n", branch1, branch2);
+        }
+    }
+    else
+    {
+        puts("invalid command");
+        return;
+    }
+}
+void mergecopy(int id1, int id2)
+{
+    char *branch1 = branchfinder(id1);
+    char *branch2 = branchfinder(id2);
+    char *cwd = malloc(PATH_MAX);
+    cwd = getcwd(cwd, PATH_MAX);
+    char *repo = CheckInit(cwd);
+    char *commit_path1 = malloc(PATH_MAX);
+    sprintf(commit_path1, "%s/.magit/branch/%s/%d", repo, branch1, id1);
+    char *commit_path2 = malloc(PATH_MAX);
+    sprintf(commit_path2, "%s/.magit/branch/%s/%d", repo, branch2, id2);
+    char *tmp = malloc(PATH_MAX);
+    strcpy(tmp, cwd);
+    tmp += strlen(commit_path1);
+    char *cur_path = malloc(PATH_MAX);
+    sprintf(cur_path, "%s%s", commit_path2, tmp);
+    DIR *dir = opendir(cwd);
+    struct dirent *fp;
+    while ((fp = readdir(dir)) != NULL)
+    {
+        if (strcmp(fp->d_name, ".") == 0 || strcmp(fp->d_name, "..") == 0 || strcmp(fp->d_name, ".magit") == 0)
+        {
+            continue;
+        }
+        if (fp->d_type == DT_DIR)
+        {
+            char *chdir_command = malloc(PATH_MAX);
+            chdir(fp->d_name);
+            mergecopy(id1, id2);
+            chdir(cwd);
+        }
+        else if (fp->d_type == DT_REG)
+        {
+            char *path = malloc(PATH_MAX);
+            char *mkdir_command = malloc(PATH_MAX);
+            sprintf(mkdir_command, "mkdir -p %s%s", commit_path2, tmp);
+            system(mkdir_command);
+            char *cp_command = malloc(PATH_MAX);
+            sprintf(path, "%s/%s", cwd, fp->d_name);
+            sprintf(cp_command, "cp %s %s%s/%s", path, commit_path2, tmp, fp->d_name);
+            system(cp_command);
+        }
+    }
+}
+void grep(int argc, char **argv)
+{
+    int cflag = 0, nflag = 0, cnum = -1;
+    char *cwd = malloc(PATH_MAX);
+    cwd = getcwd(cwd, PATH_MAX);
+    char *repo = CheckInit(cwd);
+    for (int i = 0; i < argc; i++)
+    {
+        if (!strcmp(argv[i], "-c") && i + 1 < argc)
+        {
+            cflag = 1;
+            cnum = atoi(argv[i + 1]);
+        }
+        if (!strcmp(argv[i], "-n"))
+        {
+            nflag = 1;
+        }
+    }
+    if (cflag)
+    {
+        char *branch = branchfinder(cnum);
+        char *commit_path = malloc(PATH_MAX);
+        sprintf(commit_path, "%s/.magit/branch/%s/%d", repo, branch, cnum);
+        chdir(commit_path);
+    }
+    grepfinder(argv[3], argv[5], nflag);
+    chdir(cwd);
+}
+void grepfinder(char *path, char *word, int mode)
+{
+    char *cwd = malloc(PATH_MAX);
+    cwd = getcwd(cwd, PATH_MAX);
+    char *file_path = malloc(PATH_MAX);
+    sprintf(file_path, "%s/%s", cwd, path);
+    FILE *file = fopen(file_path, "r");
+    if (file == NULL)
+    {
+        puts("file not found");
+    }
+    char *line = malloc(PATH_MAX);
+    int counter = 1;
+    while (fgets(line, PATH_MAX, file) != NULL)
+    {
+        char *check = strstr(line, word);
+        if (check != NULL)
+        {
+            if (mode)
+            {
+                printf("%d: ", counter);
+            }
+            counter++;
+        }
+        else
+        {
+            counter++;
+            continue;
+        }
+        int flag = 0;
+        char *token = strtok(line, " \n");
+        line[strcspn(line, "\n")] = 0;
+        while (token != NULL)
+        {
+            if (!strncmp(token, word, strlen(word)))
+            {
+                printf("%s%s%s ", green, word, stop);
+            }
+            else
+            {
+                printf("%s ", token);
+            }
+            token = strtok(NULL, " \n");
+        }
+        printf("\n");
+    }
+    if (counter == 1)
+    {
+        puts("word not found");
     }
 }
