@@ -311,7 +311,6 @@ int main(int argc, char *argv[])
                 message = shortcutfinder(argv[3]);
                 if (message == NULL)
                 {
-                    puts("shortcut doesn't exist!");
                     return 0;
                 }
                 char *commit_command = malloc(PATH_MAX);
@@ -1079,7 +1078,6 @@ void commit(int argc, char **argv)
     user_email[strlen(user_email)] = '\0';
     fclose(user_file);
     fclose(email_file);
-
     // branch name get
     char *branch_path = malloc(PATH_MAX);
     sprintf(branch_path, "%s/.magit/commits/branch.txt", repo);
@@ -1525,7 +1523,7 @@ void logg(int argc, char **argv)
             printf("author: %s", comm[j].author);
             printf("commit id: %d\n", comm[j].id);
             printf("message: %s", comm[j].message);
-            printf("branch: %s\n", comm[j].branch);
+            printf("branch: %s", comm[j].branch);
             printf("time: %d/%d/%d %d:%d:%d\n", comm[j].time->tm_year, comm[j].time->tm_mon, comm[j].time->tm_mday, comm[j].time->tm_hour, comm[j].time->tm_min, comm[j].time->tm_sec);
             printf("file count: %d\n", comm[j].filecount);
             printf("\n");
@@ -2623,6 +2621,19 @@ void revert(int argc, char **argv)
     {
         char *checkout_command = malloc(PATH_MAX);
         sprintf(checkout_command, "magit checkout %s", argv[3]);
+
+        chdir(".magit");
+        char *rm_command = malloc(PATH_MAX);
+        sprintf(rm_command, "rm status.txt");
+        system(rm_command);
+        sprintf(rm_command, "rm add.txt");
+        system(rm_command);
+        sprintf(rm_command, "rm reset.txt");
+        system(rm_command);
+        sprintf(rm_command, "rm -r stage");
+        system(rm_command);
+        system("touch status.txt add.txt reset.txt");
+        mkdir("stage", 0777);
         system(checkout_command);
         flag = 2;
         return;
@@ -2630,33 +2641,82 @@ void revert(int argc, char **argv)
     else
     {
         flag = 0;
+        int id;
         char *branch = malloc(PATH_MAX);
-        int id = atoi(argv[2]);
         branch = branchfinder(id);
         if (branch == NULL)
         {
             puts("This commit does not exist!");
             return;
         }
-        // find the commit message of a commit with id and branch given
-        char *log_path = malloc(PATH_MAX);
-        sprintf(log_path, "%s/.magit/commits/log.txt", repo);
-        FILE *log_file = fopen(log_path, "r");
-        char *line = malloc(PATH_MAX);
-        while (fgets(line, PATH_MAX, log_file) != NULL)
+        if (!strncmp(argv[2], "HEAD-", 5))
         {
-            if (!strncmp(line, argv[2], strlen(argv[2])))
+            int n;
+            sscanf(argv[2], "HEAD-%d", &n);
+            char *branch_path = malloc(PATH_MAX);
+            sprintf(branch_path, "%s/.magit/commits/branch.txt", repo);
+            FILE *branch_file = fopen(branch_path, "r");
+            char *line = malloc(PATH_MAX);
+            fgets(line, PATH_MAX, branch_file);
+            fclose(branch_file);
+            char *list_txt = malloc(PATH_MAX);
+            sprintf(list_txt, "%s/.magit/branch/%s/list.txt", repo, line);
+            FILE *list_file = fopen(list_txt, "r");
+            int i = 0;
+            int ids[100];
+            while (fgets(line, PATH_MAX, list_file) != NULL)
+            {
+                ids[i] = atoi(line);
+                i++;
+            }
+            fclose(list_file);
+            id = ids[i - n - 1];
+            char *log_path = malloc(PATH_MAX);
+            sprintf(log_path, "%s/.magit/commits/log.txt", repo);
+            FILE *log_file = fopen(log_path, "r");
+            int counter = -1;
+            while (fgets(line, PATH_MAX, log_file) != NULL)
             {
                 int a = atoi(line);
-                int b = atoi(argv[2]);
-                if (a != b)
+                counter++;
+                if (a != id)
                 {
                     continue;
                 }
-                fgets(message, PATH_MAX, log_file);
-                break;
+                if (counter % 6 == 1)
+                {
+                    fgets(message, PATH_MAX, log_file);
+                    break;
+                }
             }
         }
+        else
+        {
+            id = atoi(argv[2]);
+            char *log_path = malloc(PATH_MAX);
+            sprintf(log_path, "%s/.magit/commits/log.txt", repo);
+            FILE *log_file = fopen(log_path, "r");
+            char *line = malloc(PATH_MAX);
+            int counter = -1;
+            while (fgets(line, PATH_MAX, log_file) != NULL)
+            {
+                counter++;
+                if (!strncmp(line, argv[2], strlen(argv[2])))
+                {
+                    int a = atoi(line);
+                    if (a != id)
+                    {
+                        continue;
+                    }
+                    if (counter % 6 == 1)
+                    {
+                        fgets(message, PATH_MAX, log_file);
+                        break;
+                    }
+                }
+            }
+        }
+        // find the commit message of a commit with id and branch given
     }
     char *stagefolder = malloc(PATH_MAX);
     sprintf(stagefolder, "%s/.magit/stage", repo);
@@ -2973,17 +3033,18 @@ void tag(int argc, char **argv)
 }
 int diff(int argc, char **argv)
 {
-    int flag = 0;
+    int flag = 0, line1flag = 0;
     if (!strcmp(argv[2], "-f"))
     {
         int begin1 = 1, end1 = -1, begin2 = 1, end2 = -1;
         for (int i = 0; i < argc; i++)
         {
-            if (!strcmp(argv[i], "line1"))
+            if (!strcmp(argv[i], "-line1"))
             {
                 sscanf(argv[i + 1], "%d-%d", &begin1, &end1);
+                line1flag = 1;
             }
-            if (!strcmp(argv[i], "line2"))
+            if (!strcmp(argv[i], "-line2"))
             {
                 sscanf(argv[i + 1], "%d-%d", &begin2, &end2);
             }
@@ -2998,7 +3059,14 @@ int diff(int argc, char **argv)
         char *file1 = malloc(PATH_MAX);
         sprintf(file1, "%s/%s", repo, argv[3]);
         char *file2 = malloc(PATH_MAX);
-        sprintf(file2, "%s/%s", repo, argv[4]);
+        if (line1flag == 0)
+        {
+            sprintf(file2, "%s/%s", repo, argv[4]);
+        }
+        else
+        {
+            sprintf(file2, "%s/%s", repo, argv[6]);
+        }
         FILE *file1_file = fopen(file1, "r");
         FILE *file2_file = fopen(file2, "r");
         char *line1 = malloc(PATH_MAX);
@@ -3046,8 +3114,13 @@ int diff(int argc, char **argv)
             int cnt = 0;
             for (int i = 0; i < strlen(line1); i++)
             {
-                if (line1[i] == ' ' || line1[i] == '\n' || line1[i] == '\t')
+                if (line1[i] == ' ' || line1[i] == '\t')
                 {
+                    continue;
+                }
+                if (line1[i] == '\n')
+                {
+                    line1_counter++;
                     continue;
                 }
                 tmp1[cnt] = line1[i];
@@ -3057,8 +3130,13 @@ int diff(int argc, char **argv)
             cnt = 0;
             for (int i = 0; i < strlen(line2); i++)
             {
-                if (line2[i] == ' ' || line2[i] == '\n' || line2[i] == '\t')
+                if (line2[i] == ' ' || line2[i] == '\t')
                 {
+                    continue;
+                }
+                if (line2[i] == '\n')
+                {
+                    line2_counter++;
                     continue;
                 }
                 tmp2[cnt] = line2[i];
@@ -3067,7 +3145,6 @@ int diff(int argc, char **argv)
             tmp2[cnt] = '\0';
             if (strcmp(tmp1, tmp2))
             {
-                deb;
                 flag = 1;
                 line1[strlen(line1) - 1] = '\0';
                 line2[strlen(line2) - 1] = '\0';
@@ -3082,8 +3159,8 @@ int diff(int argc, char **argv)
                     name2 = strrchr(argv[4], '/') + 1;
                 }
                 printf("<<<<<<<<<<\n");
-                printf("%s%s- %d\n%s%s\n", red, name1, line1_counter, line1, stop);
-                printf("%s%s- %d\n%s%s\n", green, name2, line2_counter, line2, stop);
+                printf("%s%s- %d\n%s%s\n", red, name1, line1_counter - 1, line1, stop);
+                printf("%s%s- %d\n%s%s\n", green, name2, line2_counter - 1, line2, stop);
                 printf(">>>>>>>>>>\n");
             }
         }
@@ -3175,6 +3252,17 @@ int diffinder(int id1, int id2, int mode)
                     {
                         diff_args[i] = malloc(PATH_MAX);
                     }
+                    // cp these 2 txt files into .magit then diff on them then rm them
+                    // chdir("/");
+                    // char *cp_command = malloc(PATH_MAX);
+                    // sprintf(cp_command, "cp %s %s/.magit", file1, repo);
+                    // printf("%s\n", cp_command);
+                    // system(cp_command);
+                    // sprintf(cp_command, "cp %s %s/.magit", file2, repo);
+                    // printf("%s\n", cp_command);
+                    // system(cp_command);
+                    // chdir(repo);
+                    // chdir(".magit");
                     strcpy(diff_args[0], "magit");
                     strcpy(diff_args[1], "diff");
                     strcpy(diff_args[2], "-f");
