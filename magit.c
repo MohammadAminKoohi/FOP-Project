@@ -178,7 +178,7 @@ int main(int argc, char *argv[])
                     {
                         // delete from stage folder
                         char *path = malloc(PATH_MAX);
-                        path = FindPath(argv[2]);
+                        path = FindPath(argv[i]);
                         char *rm_path = malloc(PATH_MAX);
                         sprintf(rm_path, "rm -r %s/.magit/stage%s", repo, path);
                         system(rm_path);
@@ -301,6 +301,10 @@ int main(int argc, char *argv[])
         }
         else if (!strcmp(argv[1], "commit"))
         {
+            if (argc <= 2)
+            {
+                INVALID
+            }
             if (!strcmp(argv[2], "-s"))
             {
                 char *message = malloc(PATH_MAX);
@@ -323,6 +327,11 @@ int main(int argc, char *argv[])
                 if (strlen(argv[3]) > 72)
                 {
                     puts("commit message must be less than 72 characters");
+                    return 0;
+                }
+                if (strlen(argv[3]) == 0)
+                {
+                    puts("commit message can't be empty");
                     return 0;
                 }
                 commit(argc, argv);
@@ -683,8 +692,8 @@ void init()
     cwd = getcwd(buffer, PATH_MAX);
     if (CheckInit(cwd) != NULL)
     {
-        puts("repository reinitialized");
-        system("rm -r .magit");
+        puts("This is already a magit repository!");
+        return;
     }
     mkdir(".magit", 0777);
     mkdir(".magit/branch", 0777);
@@ -825,7 +834,7 @@ void addn(int num)
     }
     while ((fp = readdir(dir)) != NULL)
     {
-        if (strcmp(fp->d_name, ".") == 0 || strcmp(fp->d_name, "..") == 0)
+        if (strcmp(fp->d_name, ".") == 0 || strcmp(fp->d_name, "..") == 0 || strcmp(fp->d_name, ".magit") == 0)
         {
             continue;
         }
@@ -2474,11 +2483,11 @@ void commitstatus(int argc, char **argv)
                 stats = 'D';
             }
             int stage = CheckStage(main_path);
-            if (stage)
+            if (stage && stats == 'D')
             {
                 printf("%s +%c\n", fp->d_name, stats);
             }
-            else
+            else if (stats == 'D')
             {
                 printf("%s -%c\n", fp->d_name, stats);
             }
@@ -2503,6 +2512,14 @@ void alias(int argc, char **argv, int mode)
             sprintf(name, "%s.txt", alias);
             chdir("/");
             chdir(path);
+            char *tmp = malloc(PATH_MAX);
+            strcpy(tmp, argv[4]);
+            char *token = strtok(tmp, " ");
+            if (strcmp(token, "tag") && strcmp(token, "grep") && strcmp(token, "set") && strcmp(token, "add") && strcmp(token, "commit") && strcmp(token, "checkout") && strcmp(token, "status") && strcmp(token, "revert") && strcmp(token, "branch") && strcmp(token, "log") && strcmp(token, "alias") && strcmp(token, "init") && strcmp(token, "config") && strcmp(token, "diff") && strcmp(token, "reset") && strcmp(token, "merge") && strcmp(token, "config") && strcmp(token, "replace") && strcmp(token, "remove"))
+            {
+                puts("you cant use this command as an alias");
+                return;
+            }
             FILE *aliastxt = fopen(name, "w");
             fprintf(aliastxt, "%s", argv[4]);
             chdir(cwd);
@@ -2515,6 +2532,14 @@ void alias(int argc, char **argv, int mode)
             sprintf(name, "%s.txt", alias);
             chdir("/");
             chdir(path);
+            char *tmp = malloc(PATH_MAX);
+            strcpy(tmp, argv[4]);
+            char *token = strtok(tmp, " ");
+            if (strcmp(token, "tag") && strcmp(token, "grep") && strcmp(token, "set") && strcmp(token, "add") && strcmp(token, "commit") && strcmp(token, "checkout") && strcmp(token, "status") && strcmp(token, "revert") && strcmp(token, "branch") && strcmp(token, "log") && strcmp(token, "alias") && strcmp(token, "init") && strcmp(token, "config") && strcmp(token, "diff") && strcmp(token, "reset") && strcmp(token, "merge") && strcmp(token, "config") && strcmp(token, "replace") && strcmp(token, "remove"))
+            {
+                puts("you cant use this command as an alias");
+                return;
+            }
             FILE *aliastxt = fopen(name, "w");
             fprintf(aliastxt, "%s", argv[4]);
             chdir(cwd);
@@ -2534,6 +2559,14 @@ void alias(int argc, char **argv, int mode)
         sscanf(argv[2], "alias.%s", alias);
         char *alias_path = malloc(PATH_MAX);
         sprintf(alias_path, "%s/.magit/%s.txt", repo, alias);
+        char *tmp = malloc(PATH_MAX);
+        strcpy(tmp, argv[3]);
+        char *token = strtok(tmp, " ");
+        if (strcmp(token, "tag") && strcmp(token, "grep") && strcmp(token, "set") && strcmp(token, "add") && strcmp(token, "commit") && strcmp(token, "checkout") && strcmp(token, "status") && strcmp(token, "revert") && strcmp(token, "branch") && strcmp(token, "log") && strcmp(token, "alias") && strcmp(token, "init") && strcmp(token, "config") && strcmp(token, "diff") && strcmp(token, "reset") && strcmp(token, "merge") && strcmp(token, "config") && strcmp(token, "replace") && strcmp(token, "remove"))
+        {
+            puts("you cant use this command as an alias");
+            return;
+        }
         FILE *alias_file = fopen(alias_path, "w");
         fprintf(alias_file, "%s", argv[3]);
     }
