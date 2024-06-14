@@ -5,4 +5,4 @@
 
 ### Version Control System
 
-This project utilizes Magit, a powerful VCS for Unix-based operating systems. Magit provides a seamless interface for managing Git repositories.
+This project utilizes Magit, a simple VCS for Unix-based operating systems. Magit provides a seamless interface for managing Git repositories.
